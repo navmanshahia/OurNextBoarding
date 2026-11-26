@@ -1,2 +1,5 @@
 /private/config.php
 .env
+/private/install-key.txt
+/private/install.lock
+/private/config-*
