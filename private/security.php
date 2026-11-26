@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/mailer.php';
 // Shared session guard. Password changes invalidate every existing session.
 function securityGuard(PDO $db): void {
  if(empty($_SESSION['uid']))return;
@@ -12,7 +13,7 @@ function securitySetup(PDO $db):void{
 }
 function securityMail(array $c,string $email,string $subject,string $body):bool{
  if(!filter_var($email,FILTER_VALIDATE_EMAIL)||empty($c['mail_from'])||!filter_var($c['mail_from'],FILTER_VALIDATE_EMAIL))return false;
- return mail($email,$subject,$body,'From: '.$c['mail_from']);
+ return onbMail($c,$email,$subject,$body);
 }
 function securityVerifySend(PDO $db,array $c,array $a):void{
  securitySetup($db);if(empty($c['public_url'])||!str_starts_with($c['public_url'],'https://'))throw new RuntimeException('Email service not configured.');
