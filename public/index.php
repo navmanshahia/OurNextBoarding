@@ -22,6 +22,8 @@ $u=isset($_SESSION['uid'])?q('SELECT id,name,email,role FROM users WHERE id=?',[
 $admin=$u&&$u['role']==='admin';
 $error='';
 require_once __DIR__.'/agent-module.php';
+agentReferralCapture();
+if(($_GET['page']??'')==='agent_statement')agentStatement($u,$admin);
 require_once __DIR__.'/boarding-module.php';
 if($admin){$db->exec("CREATE TABLE IF NOT EXISTS trip_details(trip_id INT PRIMARY KEY,activities TEXT NOT NULL,optional_activities TEXT NOT NULL,exclusions TEXT NOT NULL,FOREIGN KEY(trip_id) REFERENCES trips(id))");}
 function noticeDefaults(){return ['Booking and availability'=>'Enquiries do not confirm a reservation. Final availability and pricing must be confirmed.','Passports and visas'=>'Entry requirements depend on nationality and travel documents. Confirm requirements before departure.','Cancellation and refunds'=>'Written cancellation and refund terms will be provided before any booking commitment.','Travel insurance'=>'Consider suitable medical and cancellation coverage.','Itinerary changes'=>'Activities and timing may change due to weather, availability or operational requirements.'];}
@@ -52,7 +54,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
  if($action==='enquire'){
  if(!filter_var(p('email'),FILTER_VALIDATE_EMAIL)||!p('name')||!p('message')||strlen(p('message'))>5000)throw new RuntimeException('Please complete all fields.');
  $id=(int)p('trip_id');if($id&&!q('SELECT id FROM trips WHERE id=? AND published=1',[$id])->fetchColumn())throw new RuntimeException('Trip unavailable.');
- q('INSERT INTO enquiries(trip_id,name,email,message) VALUES(?,?,?,?)',[$id?:null,p('name'),p('email'),p('message')]);go('page=thanks');
+ if(isset($_SESSION['agent_ref']))agentExtrasSetup();$db->beginTransaction();try{q('INSERT INTO enquiries(trip_id,name,email,message) VALUES(?,?,?,?)',[$id?:null,p('name'),p('email'),p('message')]);agentAttribute((int)$db->lastInsertId(),$id);$db->commit();}catch(Throwable $e){$db->rollBack();throw $e;}go('page=thanks');
  }
  if(str_starts_with($action,'concierge_'))conciergeAction($action,$u,$admin);
  if(str_starts_with($action,'agent_'))agentAction($action,$u,$admin);
