@@ -1,0 +1,5 @@
+---
+deployment:
+  tasks:
+    - /bin/chmod 700 private
+    - /bin/chmod 600 private/config.php 2>/dev/null || /bin/true
