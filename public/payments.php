@@ -5,6 +5,8 @@ session_set_cookie_params(['secure'=>true,'httponly'=>true,'samesite'=>'Lax']);s
 header('Cache-Control: no-store');header('X-Frame-Options: DENY');header('X-Content-Type-Options: nosniff');
 $c=require __DIR__.'/../private/config.php';
 $db=new PDO($c['dsn'],$c['user'],$c['password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_EMULATE_PREPARES=>false]);
+require_once __DIR__.'/../private/security.php';
+securityGuard($db);
 function q($s,$a=[]){global $db;$p=$db->prepare($s);$p->execute($a);return $p;}
 function h($s){return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8');}
 function money($n){return 'CAD $'.number_format($n/100,2);}
