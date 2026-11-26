@@ -25,13 +25,13 @@ if(is_file($dir.'/config.php'))throw new Exception('Already installed.');
 $db=new PDO($cfg['dsn'],$cfg['user'],$cfg['password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
 if($db->query('SHOW TABLES')->fetch())throw new Exception('Use a new empty database. Existing data will not be overwritten.');
 $sql=file_get_contents(__DIR__.'/../schema.sql');if(!$sql)throw new Exception('Schema file missing.');
-foreach(explode(';',$sql) as $statement){if(trim($statement)!=='')$db->exec($statement);}
+$db->exec($sql);
 $db->prepare("INSERT INTO users(name,email,password,role) VALUES(?,?,?,'admin')")->execute(['Administrator',strtolower($email),password_hash($pw,PASSWORD_DEFAULT)]);
 $tmp=tempnam($dir,'config-');if(!$tmp)throw new Exception('Configuration directory not writable.');
 chmod($tmp,0600);
 if(file_put_contents($tmp,'<?php return '.var_export($cfg,true).';')===false||!rename($tmp,$dir.'/config.php'))throw new Exception('Could not save configuration.');
 unlink($dir.'/install-key.txt');unset($_SESSION['install_csrf']);header('Location: index.php?page=login');exit;
-}catch(PDOException $e){$error='Database setup failed. Check credentials and permissions. If tables were partially created, use a new empty database.';}catch(Throwable $e){$error=$e->getMessage();}
+}catch(PDOException $e){$code=(int)($e->errorInfo[1]??0);$error=match($code){1045=>'Database login denied. Check the full cPanel username and password.',1044,1142=>'Database permission denied. Grant the database user all privileges.',1049=>'Database not found. Check the full cPanel database name.',1064=>'SQL syntax error during setup. Use the latest installer and a new empty database.',default=>'Database setup failed (MySQL error '.$code.'). Check hosting error logs and permissions.'};}catch(Throwable $e){$error=$e->getMessage();}
 }
 function esc($s){return htmlspecialchars($s,ENT_QUOTES,'UTF-8');}
 ?><!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Our Next Boarding setup</title><link rel="stylesheet" href="style.css"><main><h1>Welcome aboard.</h1><p>Install your travel platform.</p><?php if($error):?><p role="alert"><?=esc($error)?></p><?php endif;?><form method="post"><input type="hidden" name="csrf" value="<?=esc($_SESSION['install_csrf'])?>"><label>Installation key<input name="key" type="password" required></label><label>cPanel database name<input name="database" required></label><label>Database username<input name="user" required></label><label>Database password<input name="db_password" type="password" required></label><label>Administrator email<input name="email" type="email" required></label><label>Administrator password<input name="admin_password" type="password" minlength="12" required></label><button>Install website</button></form></main></html>
