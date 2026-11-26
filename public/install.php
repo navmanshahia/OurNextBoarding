@@ -23,10 +23,16 @@ $cfg=['dsn'=>'mysql:host=localhost;dbname='.$name.';charset=utf8mb4','user'=>$_P
 $lock=fopen($dir.'/install.lock','c');if(!$lock||!flock($lock,LOCK_EX|LOCK_NB))throw new Exception('Installation in progress.');
 if(is_file($dir.'/config.php'))throw new Exception('Already installed.');
 $db=new PDO($cfg['dsn'],$cfg['user'],$cfg['password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
-if($db->query('SHOW TABLES')->fetch())throw new Exception('Use a new empty database. Existing data will not be overwritten.');
+$existing=$db->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
+$allowed=['users','trips','enquiries','travellers','attempts'];
+if(array_diff($existing,$allowed))throw new Exception('Unexpected tables found. Installation stopped without modifying data.');
+foreach($existing as $table){if((int)$db->query('SELECT COUNT(*) FROM `'.$table.'`')->fetchColumn()!==0)throw new Exception('Existing records found. Installation stopped without modifying data.');}
+foreach($existing as $table){$db->exec('ALTER TABLE `'.$table.'` ENGINE=InnoDB');$db->exec('ALTER TABLE `'.$table.'` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');}
+
 $sql=file_get_contents(__DIR__.'/../schema.sql');if(!$sql)throw new Exception('Schema file missing.');
+if(!is_writable($dir))throw new Exception('Configuration directory is not writable.');
 $db->exec("SET SESSION default_storage_engine=InnoDB");
-foreach(preg_split('/;\\s*(?:\\r?\\n|$)/',trim($sql)) as $statement){if(trim($statement)!=='')$db->exec($statement);}
+foreach(preg_split('/;\\s*(?:\\r?\\n|$)/',trim($sql)) as $statement){if(trim($statement)!=='')$db->exec(preg_replace('/^\s*CREATE TABLE /i','CREATE TABLE IF NOT EXISTS ',$statement));}
 $db->prepare("INSERT INTO users(name,email,password,role) VALUES(?,?,?,'admin')")->execute(['Administrator',strtolower($email),password_hash($pw,PASSWORD_DEFAULT)]);
 $tmp=tempnam($dir,'config-');if(!$tmp)throw new Exception('Configuration directory not writable.');
 chmod($tmp,0600);
