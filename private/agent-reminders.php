@@ -1,0 +1,5 @@
+<?php
+if(PHP_SAPI!=='cli'){http_response_code(404);exit;}
+$c=require __DIR__.'/config.php';$db=new PDO($c['dsn'],$c['user'],$c['password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);$db->exec("CREATE TABLE IF NOT EXISTS onb_agent_reminders(lead_id INT NOT NULL,due DATE NOT NULL,sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(lead_id,due))");$lock=$db->query("SELECT GET_LOCK('onb_agent_reminders',0)")->fetchColumn();if(!$lock)exit;
+foreach($db->query("SELECT l.id,l.followup,u.email FROM onb_agent_leads l JOIN users u ON u.id=l.agent_id JOIN onb_agents a ON a.user_id=u.id LEFT JOIN onb_agent_reminders r ON r.lead_id=l.id AND r.due=l.followup WHERE a.active=1 AND l.followup<=CURRENT_DATE AND l.stage NOT IN ('won','lost') AND r.lead_id IS NULL") as $r){if(filter_var($r['email'],FILTER_VALIDATE_EMAIL)&&mail($r['email'],'Our Next Boarding: follow-up due','A customer follow-up is due. Sign in to your agent portal to review your pipeline.')){$p=$db->prepare('INSERT IGNORE INTO onb_agent_reminders(lead_id,due) VALUES(?,?)');$p->execute([$r['id'],$r['followup']]);}}
+$db->query("SELECT RELEASE_LOCK('onb_agent_reminders')");
