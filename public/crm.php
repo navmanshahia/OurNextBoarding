@@ -7,6 +7,8 @@ header('X-Content-Type-Options: nosniff');
 header("Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; form-action 'self'");
 $c=require __DIR__.'/../private/config.php';
 $db=new PDO($c['dsn'],$c['user'],$c['password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+require_once __DIR__.'/../private/security.php';
+securityGuard($db);
 $s=$db->prepare('SELECT role FROM users WHERE id=?');$s->execute([$_SESSION['uid']??0]);if($s->fetchColumn()!=='admin'){http_response_code(403);exit('Access denied');}
 function e($v){return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8');}
 $db->exec('CREATE TABLE IF NOT EXISTS onb_crm (lead_id INT PRIMARY KEY, stage VARCHAR(30) NOT NULL DEFAULT "new", followup DATE NULL, notes TEXT NOT NULL)');
