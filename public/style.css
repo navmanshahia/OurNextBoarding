@@ -97,3 +97,5 @@ body.story-wait .story-loading{opacity:1;visibility:visible}
 .public-site .card:hover{transform:translateY(-2px);box-shadow:0 8px 24px #2428210b}
 .public-site footer{padding:22px 4%;font-size:12px}
 @media(max-width:760px){.public-site .luxury-hero{min-height:320px;padding:26px 20px}.public-site .journey-grid{grid-template-columns:1fr}.public-site .journey-card img{height:180px}.public-site main>.trip-story-hero{height:260px;min-height:260px}.public-site main{padding:12px 4% 24px}}
+
+.policy-centre{max-width:960px;margin:0 auto;padding:clamp(16px,4vw,48px);overflow-wrap:anywhere}.policy-centre h1{font-size:clamp(32px,5vw,56px);line-height:1.12}.policy-centre h2{font-size:clamp(24px,3vw,34px)}.policy-centre h3{font-size:19px;margin-top:24px}.policy-centre p{max-width:75ch;line-height:1.75}.policy-centre article{padding:24px 0;border-bottom:1px solid #d9ded7;scroll-margin-top:100px}.policy-links{display:flex;flex-wrap:wrap;gap:12px;margin:24px 0}.policy-links a{padding:10px 14px;border:1px solid #d9ded7;border-radius:8px}
