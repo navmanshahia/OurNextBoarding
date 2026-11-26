@@ -25,3 +25,45 @@
 .story-loading strong{font-size:13px;letter-spacing:.23em}.story-loading span{font-family:Georgia,serif;font-size:24px;font-style:italic}.story-loading i{display:block;width:100px;height:2px;background:#ded9cd;margin:auto;overflow:hidden}.story-loading i:after{content:'';display:block;width:45%;height:100%;background:#ad925c;animation:story-load 1s ease-in-out infinite}@keyframes story-load{from{transform:translateX(-100%)}to{transform:translateX(230%)}}
 body.story-wait .story-loading{opacity:1;visibility:visible}
 @media(prefers-reduced-motion:reduce){::view-transition-old(root),::view-transition-new(root){animation:none}.story-loading,.story-loading i:after{animation:none;transition:none}}
+
+/* Compact editorial collection */
+.public-site{--paper:#f4f1ea;--ink:#242822;--green:#263e35;background:var(--paper)}
+.public-site header{min-height:62px;padding:14px 4%;background:#f4f1ea}
+.public-site main{max-width:1280px;padding:18px 4% 40px;min-height:55vh}
+.public-site h1{font-size:clamp(34px,4.5vw,62px);margin:8px 0 16px}
+.public-site h2{font-size:clamp(26px,3vw,38px);margin:12px 0}
+.public-site p{margin:8px 0 14px}
+.public-site .luxury-hero{min-height:clamp(390px,62vh,620px);border-radius:6px;padding:clamp(24px,5vw,64px);justify-content:center;align-items:flex-start}
+.public-site .luxury-hero h1{font-size:clamp(42px,5.6vw,76px);margin:12px 0}
+.public-site main>.story-intro{background:none;border:0;box-shadow:none;padding:30px 12px 18px;margin:0 auto}
+.story-intro h2{font-size:clamp(26px,3.4vw,44px);margin:10px 0}
+.intro-strip{padding:18px 0;gap:16px}
+.public-site .section-heading{margin:28px 0 16px}
+.public-site .section-heading h2{font-size:clamp(30px,3.5vw,44px)}
+.journey-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-bottom:18px}
+.public-site .journey-card{padding:0;border-radius:6px;background:#fffdf8;display:flex;flex-direction:column}
+.journey-photo{display:block;overflow:hidden;background:#354b40}
+.public-site .journey-card img{display:block;width:100%;height:clamp(190px,24vw,320px);object-fit:cover;border-radius:0;transition:transform .6s cubic-bezier(.2,.7,.2,1)}
+.journey-card:hover img{transform:scale(1.035)}
+.journey-card-copy{padding:20px;flex:1;display:flex;flex-direction:column;align-items:flex-start}
+.journey-card-copy h3{font-size:clamp(25px,3vw,36px);margin:8px 0}
+.journey-card-copy .btn{margin-top:auto}
+.journey-back{display:inline-block;margin:0 0 12px;font-size:13px;text-decoration:none}
+.public-site main>.trip-story-hero{position:relative;isolation:isolate;overflow:hidden;display:flex;align-items:end;min-height:clamp(280px,45vw,480px);padding:clamp(22px,4vw,52px);margin:0;border:0;border-radius:6px;background:#253e34;color:#fff}
+.trip-story-hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2}
+.trip-story-hero:before{content:'';position:absolute;inset:0;background:linear-gradient(0deg,#101d18df,transparent 90%);z-index:-1}
+.trip-story-hero h1{color:#fff;max-width:850px}
+.trip-story-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,320px);gap:26px;align-items:start;margin-top:22px}
+.trip-story-section{padding:18px 0;border-bottom:1px solid #d9d4c8}
+.trip-story-section:first-child{padding-top:0}
+.trip-story-section .eyebrow,.trip-enquiry .eyebrow{color:#846b43}
+.story-timeline{border-left:1px solid #c5a46d;margin:16px 0 16px 12px;padding-left:18px}
+.story-timeline article{display:flex;align-items:baseline;gap:16px;background:none;border:0;box-shadow:none;padding:10px 0;margin:0;border-radius:0}
+.story-timeline article span{font-size:12px;color:#846b43;font-weight:700}
+.story-timeline article p{margin:0}
+.trip-enquiry{position:sticky;top:90px;padding:24px;background:#e7e2d6;border-radius:6px}
+.trip-enquiry h2{font-size:29px}
+.trip-enquiry .btn{width:100%;text-align:center}
+.public-site footer{padding:26px 4%;gap:14px}
+.faq-head{margin:12px auto 24px}.faq-layout{gap:28px}.faq-group{margin-bottom:24px}
+@media(max-width:760px){.public-site main{padding:12px 4% 28px}.journey-grid,.trip-story-layout{grid-template-columns:1fr}.trip-enquiry{position:static}.public-site .luxury-hero{min-height:410px}.intro-strip{gap:10px}.journey-card-copy{padding:16px}}
