@@ -31,6 +31,7 @@ function onbFlightVerify(array $s): array {
     if(!is_numeric($price['total']??null)||!is_finite((float)$price['total'])||(float)$price['total']<=0||($price['currency']??'')!=='CAD') throw new RuntimeException('A valid CAD fare was not returned. Search again.');
     if(isset($j['passengers']['adults'])&&(int)$j['passengers']['adults']!==$s['adults']) throw new RuntimeException('Passenger count changed. Search again.');
     $s['verified']=$j;$s['price']=round((float)$price['total'],2);
+    $s['fare_hash']=hash('sha256',json_encode([$j['segments']??[],$j['fare']??[],$j['terms']??[],$j['baggage']??[]],JSON_THROW_ON_ERROR));
     if(!empty($j['expiration'])&&is_string($j['expiration'])){
         $expiry=strtotime($j['expiration']);if($expiry!==false)$s['expires']=min($s['expires'],$expiry);
     }
@@ -60,6 +61,11 @@ function onbFlightPersonDate(string $key): DateTimeImmutable {
 function onbFlightCheckoutAction(string $action, bool $admin): void {
     global $u,$c;
     if(!$u||!onbTravelCanSearch('flights',$admin))throw new RuntimeException('Sign in to access flight checkout.');
+    if(in_array($action,['nuitee_select','nuitee_prebook'],true)){
+        $ip=$_SERVER['REMOTE_ADDR']??'unknown';
+        if((int)q('SELECT COUNT(*) FROM attempts WHERE ip=? AND created_at > NOW()-INTERVAL 15 MINUTE',[$ip])->fetchColumn()>=15)throw new RuntimeException('Too many requests. Try again later.');
+        q('INSERT INTO attempts(ip) VALUES(?)',[$ip]);
+    }
     if($action==='nuitee_select'){
         $prior=$_SESSION['onb_flight_checkout']??[];
         if(($prior['uid']??0)===(int)$u['id']&&($prior['sandbox']??null)===onbTravelSettings()['sandbox']&&!empty($prior['checkout_id'])&&($prior['state']??'')!=='CONFIRMED'){
@@ -77,10 +83,10 @@ function onbFlightCheckoutAction(string $action, bool $admin): void {
     if($action==='nuitee_prebook'){
         if(!empty($s['checkout_id']))throw new RuntimeException('A checkout already exists. Do not create another payment.');
         if(p('accept_fare')!=='1')throw new RuntimeException('Review and accept the fare and booking terms first.');
-        $priorPrice=$s['price'];
+        $priorPrice=$s['price'];$priorFare=$s['fare_hash']??'';
         $s=onbFlightVerify($s);
         $_SESSION['onb_flight_checkout']=$s;
-        if($s['price']!==$priorPrice||!empty($s['verified']['changes']))throw new RuntimeException('The fare has changed. Review the updated fare and try again.');
+        if($s['price']!==$priorPrice||$s['fare_hash']!==$priorFare)throw new RuntimeException('The fare has changed. Review the updated fare and try again.');
         $namePattern='/^[\p{L}\p{M} .\'-]{1,80}$/uD';
         $email=p('contact_email');
         if(strlen($email)>254||!filter_var($email,FILTER_VALIDATE_EMAIL))throw new RuntimeException('Enter a valid contact email.');
@@ -127,6 +133,9 @@ function onbFlightCheckoutAction(string $action, bool $admin): void {
             if($status==='CONFIRMED'&&!$bookingId)$status='UNKNOWN';
             q('UPDATE onb_flight_checkouts SET state=?,booking_id=?,booking_ref=? WHERE checkout_id=?',[$status,substr($bookingId,0,255),substr($bookingRef,0,255),$s['checkout_id']]);
             $s['state']=$status;$s['booking_ref']=$bookingRef;$s['booking_id']=$bookingId;
+            $s['airline_locators']=[];
+            foreach(($d['airlineLocators']??[]) as $locator)if(is_string($locator['airlinePnr']??null)&&$locator['airlinePnr']!=='')$s['airline_locators'][]=substr((string)($locator['airlineCode']??'').' '.$locator['airlinePnr'],0,100);
+            if($status==='CONFIRMED')unset($s['secret'],$s['publishable']);
             $_SESSION['onb_flight_checkout']=$s;
             go('page=flight_checkout');
         }catch(Throwable $e){
@@ -160,7 +169,7 @@ function onbFlightCheckoutView(bool $admin): void {
     if(!empty($s['checkout_id'])){
         echo '<section><h2>Payment and confirmation</h2><p>Checkout reference: '.h($s['checkout_id']).'</p><p>Final amount: '.h(onbTravelMoney($s['payment_price'],'CAD')).'</p>';
         $state=$s['state']??'PREBOOKED';
-        if($state==='CONFIRMED'){echo '<h3>'.($s['sandbox']?'Sandbox booking confirmed':'Flight booking confirmed').'</h3><p>Booking reference: '.h($s['booking_ref']??'').'</p><p>Booking ID: '.h($s['booking_id']??'').'</p><a class="btn" href="?page=flights">Search another flight</a></section>';return;}
+        if($state==='CONFIRMED'){echo '<h3>'.($s['sandbox']?'Sandbox booking confirmed':'Flight booking confirmed').'</h3><p>Booking reference: '.h($s['booking_ref']??'').'</p><p>Booking ID: '.h($s['booking_id']??'').'</p>';foreach(($s['airline_locators']??[]) as $locator)echo '<p>Airline confirmation code: '.h($locator).'</p>';echo '<a class="btn" href="?page=flights">Search another flight</a></section>';return;}
         if($state!=='PREBOOKED')echo '<p class="notice">Status: '.h($state).'. Do not make another payment. Contact support if confirmation remains pending.</p>';
         if(!empty($s['secret'])){
             echo '<div id="onb-flight-payment" data-key="'.h($s['publishable']).'" data-secret="'.h($s['secret']).'" data-recover="'.($state==='PREBOOKED'?'0':'1').'">';
