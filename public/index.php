@@ -87,6 +87,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
  if(str_starts_with($action,'growth_'))growthAction($action,$u,$admin);
  if(str_starts_with($action,'launch_'))launchAction($action,$u,$admin);
  if(str_starts_with($action,'network_'))networkAction($action,$u,$admin);
+ if(in_array($action,['booking_cancel_request','booking_cancel_review'],true))bookingCancellationAction($action,$u,$admin);
  if(str_starts_with($action,'booking_'))bookingAction($action,$admin);
  if(str_starts_with($action,'agent_'))agentAction($action,$u,$admin);
  if(!$admin)throw new RuntimeException('Access denied.');
