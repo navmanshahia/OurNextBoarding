@@ -1,0 +1,15 @@
+name: PHP syntax and JavaScript checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax
+        run: find public private -type f -name '*.php' -print0 | xargs -0 -n 1 php -l
+      - name: JavaScript syntax
+        run: node --check public/app.js
