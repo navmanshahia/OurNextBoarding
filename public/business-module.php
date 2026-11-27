@@ -1,11 +1,12 @@
 <?php
 if(!isset($db)){http_response_code(404);exit;}
-function businessSetup(){
+function businessMailSetup(){q("CREATE TABLE IF NOT EXISTS onb_business_mail(event_key VARCHAR(100) PRIMARY KEY,status VARCHAR(20) NOT NULL,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB");q("CREATE TABLE IF NOT EXISTS onb_booking_notifications(booking_id INT PRIMARY KEY,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB");q("CREATE TABLE IF NOT EXISTS onb_checkout_reminders(request_id INT PRIMARY KEY,enabled TINYINT NOT NULL DEFAULT 1) ENGINE=InnoDB");}
+function businessSetup(){businessMailSetup();
  bookingSetup();bookingPolicySetup();bookingCancellationSetup();departureSetup();depCheckoutSetup();agentSetup();agentExtrasSetup();rewardSetup();premiumSetup();growthSetup();
  q("CREATE TABLE IF NOT EXISTS onb_crm (lead_id INT PRIMARY KEY,stage VARCHAR(30) NOT NULL DEFAULT 'new',followup DATE NULL,notes TEXT NOT NULL) ENGINE=InnoDB");
  q("CREATE TABLE IF NOT EXISTS onb_campaign_leads(lead_id INT PRIMARY KEY,source VARCHAR(80) NOT NULL,campaign VARCHAR(80) NOT NULL) ENGINE=InnoDB");
  q("CREATE TABLE IF NOT EXISTS onb_visa_checklist(booking_id INT NOT NULL,item VARCHAR(40) NOT NULL,done TINYINT NOT NULL DEFAULT 0,PRIMARY KEY(booking_id,item)) ENGINE=InnoDB");
- q("CREATE TABLE IF NOT EXISTS onb_business_mail(event_key VARCHAR(100) PRIMARY KEY,status VARCHAR(20) NOT NULL,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB");
+
 }
 function businessToday(){return (new DateTimeImmutable('now',new DateTimeZone('America/Vancouver')))->format('Y-m-d');}
 function businessMetrics($days){
