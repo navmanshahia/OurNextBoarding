@@ -1,0 +1,30 @@
+name: Travel booking syntax checks
+on:
+  pull_request:
+    paths:
+      - 'public/travel-premium*'
+      - 'public/nuitee-module.php'
+      - 'public/flight-checkout*'
+      - 'public/hotel-checkout.php'
+      - 'public/hotel-payment.js'
+      - 'public/travel-details.php'
+      - 'public/index.php'
+      - '.github/workflows/travel-booking-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax
+        run: |
+          for file in public/index.php public/travel-premium.php public/nuitee-module.php public/flight-checkout.php public/hotel-checkout.php public/travel-details.php; do
+            php -l "$file" || exit 1
+          done
+      - name: JavaScript syntax
+        run: |
+          node --check public/travel-premium.js
+          node --check public/flight-checkout.js
+          node --check public/hotel-payment.js

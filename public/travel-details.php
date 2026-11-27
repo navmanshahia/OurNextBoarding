@@ -40,8 +40,8 @@ function onbTravelConfirmation(string $kind, array $s, array $booking): void {
 }
 function onbFlightSegmentLine(array $seg): string {
     $carrier=$seg['carrier']['marketingName']??$seg['carrier']['marketingCode']??'';
-    $flight=$seg['flightNumber']??$seg['marketingFlightNumber']??'';
-    return trim(($seg['originCode']??'').' → '.($seg['destinationCode']??'').' · '.$carrier.' '.$flight.' · '.($seg['departureTime']??'').' → '.($seg['arrivalTime']??''));
+    $flight=trim(($seg['carrier']['marketingCode']??'').' '.($seg['flight']['marketingNumber']??$seg['flightNumber']??''));
+    return trim(($seg['originCode']??'').' → '.($seg['destinationCode']??'').' · '.$carrier.' '.$flight.' · '.onbPremiumDateLabel($seg['departureTime']??null).' → '.onbPremiumDateLabel($seg['arrivalTime']??null));
 }
 function onbFlightBagLines(array $baggage): array {
     $out=[];
@@ -95,7 +95,7 @@ function onbHotelDetailView(array $s): void {
     echo '<div class="onb-detail-gallery">';
     foreach(array_slice(is_array($photos)?$photos:[],0,12) as $photo){$url=$photo['url']??'';if(is_string($url)&&filter_var($url,FILTER_VALIDATE_URL)&&parse_url($url,PHP_URL_SCHEME)==='https')echo '<a href="'.h($url).'" target="_blank" rel="noopener noreferrer"><img loading="lazy" src="'.h($url).'" alt="'.h($photo['caption']??'Hotel photo').'"></a>';}
     echo '</div><h3>Facilities</h3><ul class="onb-detail-facilities">';
-    foreach(array_slice($hotel['hotelFacilities']??[],0,60) as $facility)if(is_string($facility))echo '<li>'.h($facility).'</li>';
+    foreach(array_slice(is_array($hotel['hotelFacilities']??null)?$hotel['hotelFacilities']:[],0,60) as $facility)if(is_string($facility))echo '<li>'.h($facility).'</li>';
     echo '</ul>';
     foreach(['checkin'=>'Check-in','checkout'=>'Check-out'] as $key=>$label)if(is_string($hotel['checkinCheckoutTimes'][$key]??null))echo '<p>'.h($label.': '.$hotel['checkinCheckoutTimes'][$key]).'</p>';
     $mapped=[];
@@ -117,9 +117,13 @@ function onbFlightSearchDetails(array $journey,array $offer): void {
         if(!is_array($seg))continue;
         $direction=(string)($seg['direction']??'');$counts[$direction]=($counts[$direction]??0)+1;
         echo '<p>'.h(onbFlightSegmentLine($seg)).'</p>';
-        foreach(['duration'=>'Duration','operatingCarrierName'=>'Operated by','aircraft'=>'Aircraft'] as $key=>$label)if(is_scalar($seg[$key]??null))echo '<p class="muted">'.h($label.': '.$seg[$key]).'</p>';
+        $duration=onbPremiumDuration($seg['duration']??null);if($duration!==null)echo '<p class="muted">Flight time: '.h(onbPremiumDurationText($duration)).'</p>';
+        if(!empty($seg['carrier']['operatingName']))echo '<p class="muted">Operated by '.h($seg['carrier']['operatingName']).'</p>';
+        foreach(($seg['stops']??[]) as $stop)if(is_array($stop))echo '<p>Technical stop: '.h($stop['airportCode']??'').' · '.h(onbPremiumDurationText(onbPremiumDuration($stop['duration']??null))).'</p>';
+        foreach(($offer['segmentFares']??[]) as $fare)if(($fare['segmentKey']??null)===($seg['segmentKey']??null))echo '<p class="muted">'.h($fare['cabin']??'').' · '.h($fare['fareFamily']??'').' · '.h($fare['bookingCode']??'').'</p>';
     }
     foreach($counts as $direction=>$count)echo '<p>'.h(ucfirst(strtolower($direction)).': '.max(0,$count-1).' connection(s)').'</p>';
+    foreach(($journey['connections']??[]) as $conn)if(is_array($conn))echo '<p class="onb-connection">Connection: '.h($conn['arrivalAirportCode']??'').' → '.h($conn['departureAirportCode']??'').' · '.h(onbPremiumDurationText(onbPremiumDuration($conn['duration']??null))).(!empty($conn['overnight'])?' · Overnight':'').(!empty($conn['changeAirport'])?' · Airport change required':'').'</p>';
     $bags=$offer['baggage']??$journey['baggage']??[];$lines=onbFlightBagLines(is_array($bags)?$bags:[]);
     echo '<h3>Baggage</h3>';if(!$lines)echo '<p>Allowance not supplied in the search response. Verify before payment.</p>';
     foreach($lines as $line)echo '<p>'.h($line).'</p>';
@@ -127,5 +131,6 @@ function onbFlightSearchDetails(array $journey,array $offer): void {
     echo '<h3>Fare rules</h3>';
     foreach(['refundable'=>'Refundable','changeable'=>'Changeable'] as $key=>$label){$v=$terms[$key]??null;echo '<p>'.h($label.': '.($v===true?'Yes, subject to conditions':($v===false?'No':'Not stated'))).'</p>';}
     foreach(($terms['summary']??[]) as $term)if(is_string($term['message']??null))echo '<p>'.h($term['message']).'</p>';
+    $price=$offer['pricing']['display']??$journey['pricing']['display']??[];if(($price['currency']??'')==='CAD'){echo '<h3>Price breakdown</h3>';foreach(['base'=>'Base fare','taxes'=>'Taxes','fees'=>'Fees','total'=>'Total'] as $key=>$label)if(isset($price[$key])&&is_numeric($price[$key]))echo '<p>'.h($label).': '.h(onbTravelMoney($price[$key],'CAD')).'</p>';}
     echo '<p class="muted">All times are supplier-reported; the complete fare is reverified before checkout.</p>';
 }

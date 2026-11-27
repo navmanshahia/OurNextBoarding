@@ -58,3 +58,26 @@ Add this setting inside the existing private nuitee configuration:
 Sandbox administrator tests use the same stripe_test_publishable_key and sand_ API key described above. Keep both production direct-booking switches false until verified. Production confirmation emails use the existing onbMail SMTP integration and are attempted only once per confirmed supplier booking, not for pending bookings, sandbox tests, or mere payment authorizations. The email records success or failure; ambiguous bookings and failed mail require manual review. Hotel confirmation codes may not yet be available at initial confirmation; the email includes the supplier booking ID regardless. Flight confirmation is not represented as guaranteed ticket issuance.
 
 Deployment: upload all changed public files together (index.php, nuitee-module.php, flight-checkout.php, flight-checkout.js, hotel-checkout.php, travel-details.php, nuitee.css). Run php -l on each PHP file and node --check on flight-checkout.js. Test both detail views, prebook pricing and fees, declined/successful/3DS payments, lost sessions, duplicate submissions, confirmed/pending bookings, actual SMTP delivery, and supplier restricted-rate pricing. Complete persistent booking recovery/reconciliation, receipts and cancellation/refund handling before production payments. Direct production payment and mail delivery have not been validated in this environment. A confirmed booking is not a guarantee of ticket issuance. Never use real payment cards in sandbox.
+
+
+## Premium flight and hotel redesign
+
+The redesigned pages are scoped to Flights, Hotels, Hotel Details and both checkout flows. No homepage, navigation, group-tour, account dashboard or referral redesign is included.
+
+Deploy the updated public files together: index.php, nuitee-module.php, travel-premium.php, travel-premium.css, travel-premium.js, flight-checkout.php, flight-checkout.js, hotel-checkout.php, hotel-payment.js and travel-details.php. Keep private/config.php and your existing database. The search proxy creates onb_travel_lookup_limits for autocomplete quotas; the DB account must have CREATE/INSERT/UPDATE/DELETE permissions. New CSS/JS are only loaded on the travel routes.
+
+Hotel autocomplete uses Nuitée's paid Places endpoint. Defaults are 300 remote autocomplete calls per UTC day across the site and 30 per IP per UTC hour, shared across the flight and hotel products; session caching and debounce reduce repeated calls. Optional private config keys: lookup_daily_limit and lookup_ip_hourly_limit. Review supplier pricing before changing them.
+
+Payment: hotels now use Nuitée's hosted Payment SDK wrapper (live/sandbox chosen from the private API key); no manual Stripe publishable key is required for hotels. Flight prebooking prefers the publishableKey returned by Nuitée, falling back to the matching Nuitée dashboard publishable key if needed. The flight UI uses Stripe Payment Element with Nuitée's payment intent. No independent Stripe account is required. Return URLs are HTTPS on ournextboarding.com and booking finalization uses server-stored references.
+
+Keep public production payment disabled until the release checklist is satisfied. A new independent guard is required in the existing private nuitee array:
+```php
+'checkout_verified' => false,
+'direct_booking_enabled' => false,
+'hotel_direct_booking_enabled' => false,
+```
+Do not set checkout_verified true until real end-to-end sandbox verification, payment recovery, supplier pricing rules, confirmations and applicable travel licensing are completed. Admin sandbox checkout still works with a fresh sandbox key. No private keys were committed. Do not use real personal documents or cards during tests.
+
+Known limitations: adult-only checkout and search; one-way and round-trip flights; even room distribution; autocomplete and documented provider payloads are not live-tested; hotel rate eligibility is conservative and may exclude restricted offers; local results are limited to 100 eligible flight fares and 30 hotels with up to 10 room offers each. Advanced filters, family/multi-city search, persistent lost-session recovery/reconciliation, downloadable receipts/vouchers and branded HTML/lifecycle emails remain incomplete. Existing confirmation email sender is retained and sends only after confirmed supplier status. No live transaction or email test was run. Review external hero image licensing/availability before publication.
+
+Validation workflow: Travel booking syntax checks (PHP lint and node --check). Syntax checks do not validate actual supplier responses, payment SDK integration, UI rendering or booking delivery. Test in staging on mobile and desktop, including autocomplete, no results, search filters, expired offers, changed rates, Stripe 3DS, declines, interrupted payments, duplicate booking, status recovery, confirmation email and unaffected site navigation. Do not deploy an untested payment flow to public customers.
