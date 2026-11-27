@@ -11,7 +11,7 @@ function onbTravelLookup(bool $admin): void {
     $path=$kind==='flights'?'/data/flights/airports?'.http_build_query(['q'=>$query]):'/data/places?'.http_build_query(['textQuery'=>$query]);
     $ch=curl_init('https://api.liteapi.travel/v3.0'.$path);curl_setopt_array($ch,[CURLOPT_HTTPHEADER=>['Accept: application/json','X-API-Key: '.onbTravelSettings()['key']],CURLOPT_RETURNTRANSFER=>true,CURLOPT_CONNECTTIMEOUT=>4,CURLOPT_TIMEOUT=>9,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2]);$raw=curl_exec($ch);$status=curl_getinfo($ch,CURLINFO_HTTP_CODE);curl_close($ch);
     if($status!==200||!is_string($raw)){http_response_code(502);echo '[]';exit;}
-    $data=json_decode($raw,true);$rows=$data['data']??[];$out=[];
+    $data=json_decode($raw,true);$rows=$data['data']??[];$out=[];if($kind==='flights'){$flat=[];foreach($rows as $batch)if(is_array($batch))foreach(($batch['airports']??[]) as $airport)$flat[]=$airport;$rows=$flat;}
     foreach(array_slice(is_array($rows)?$rows:[],0,12) as $row){
         if(!is_array($row))continue;
         if($kind==='flights'){
@@ -19,7 +19,7 @@ function onbTravelLookup(bool $admin): void {
             if(!is_string($id)||!preg_match('/^[A-Z]{3}$/D',$id))continue;
             $name=$row['name']??$row['airportName']??$id;$city=$row['cityName']??$row['city']??'';$country=$row['countryName']??$row['country']??'';
             $label=implode(' · ',array_filter([$id,is_string($name)?$name:'',is_string($city)?$city:'',is_string($country)?$country:'']));
-        }else{$id=$row['placeId']??'';$label=$row['displayName']??'';if(is_array($label))$label=$label['text']??'';if(!is_string($id)||!preg_match('/^[A-Za-z0-9_-]{1,255}$/D',$id)||!is_string($label)||$label==='')continue;}
+        }else{$id=$row['placeId']??'';$label=$row['displayName']??'';if(is_array($label))$label=$label['text']??'';if(!is_string($id)||!preg_match('/^[A-Za-z0-9_-]{1,255}$/D',$id)||!is_string($label)||$label==='')continue;if(is_string($row['formattedAddress']??null))$label.=' · '.$row['formattedAddress'];}
         $out[]=['id'=>$id,'label'=>substr($label,0,300)];
     }
     if(count($_SESSION['onb_lookup_cache']??[])>=30)$_SESSION['onb_lookup_cache']=[];
@@ -44,9 +44,9 @@ function onbPremiumHotelPrice(array $room): ?float {
     $retail=onbPremiumPrice($room['offerRetailRate']??null);
     $ssp=onbPremiumPrice($room['suggestedSellingPrice']??null);
     $type=strtolower((string)($room['rateType']??''));
-    if($type!==''&&$type!=='standard')return null;
+    if(($type!==''&&$type!=='standard')||!empty($room['loyaltyMembershipIdRequired']))return null;
     foreach(($room['rates']??[]) as $rate){$type=strtolower((string)($rate['rateType']??''));
-        if(($type!==''&&$type!=='standard')||!empty($rate['requiresLoyaltyMembership']))return null;}
+        if(($type!==''&&$type!=='standard')||!empty($rate['requiresLoyaltyMembership'])||!empty($rate['loyaltyMembershipIdRequired']))return null;}
     if($retail===null)return null;
     return max($retail,$ssp??$retail);
 }
@@ -86,11 +86,12 @@ function onbPremiumFilters(string $kind): void {
 function onbPremiumFlightLegs(array $journey): array {
     $legs=[];foreach(($journey['segments']??[]) as $seg){if(!is_array($seg)||empty($seg['originCode'])||empty($seg['destinationCode']))continue;$direction=(string)($seg['direction']??'OUTBOUND');$legs[$direction][]=$seg;}return $legs;
 }
-function onbPremiumFlightTimeline(array $legs): void {
+function onbPremiumFlightTimeline(array $legs,array $journey=[]): void {
+    $times=[];foreach(($journey['legDurations']??[]) as $leg)if(isset($leg['direction']))$times[$leg['direction']]=$leg;
     foreach($legs as $direction=>$segments){
-        $first=$segments[0];$last=$segments[count($segments)-1];$connections=max(0,count($segments)-1);$technical=0;$duration=0;$known=true;
-        foreach($segments as $seg){$stops=$seg['technicalStops']??null;if(is_array($stops))$technical+=count($stops);elseif(is_numeric($stops))$technical+=(int)$stops;$d=onbPremiumDuration($seg['duration']??null);if($d===null)$known=false;else $duration+=$d;}
-        echo '<div class="onb-leg"><div class="onb-leg-label">'.h($direction==='INBOUND'?'Return':'Outbound').'</div><div class="onb-timeline"><div><strong>'.h(onbPremiumTime($first['departureTime']??null)).'</strong><b>'.h($first['originCode']).'</b><small>'.h(onbPremiumDateLabel($first['departureTime']??null)).'</small></div><div class="onb-route"><small>'.h($connections+$technical===0?'Nonstop reported':($connections+$technical).' stop(s)').'</small><span></span><small>'.h($known?onbPremiumDurationText($duration).' in air':'').'</small></div><div><strong>'.h(onbPremiumTime($last['arrivalTime']??null)).'</strong><b>'.h($last['destinationCode']).'</b><small>'.h(onbPremiumDateLabel($last['arrivalTime']??null)).'</small></div></div></div>';
+        $first=$segments[0];$last=$segments[count($segments)-1];$connections=max(0,count($segments)-1);$technical=0;$duration=0;$known=true;$knownStops=true;
+        foreach($segments as $seg){$stops=$seg['stopCount']??null;if(is_numeric($stops))$technical+=(int)$stops;else $knownStops=false;$d=onbPremiumDuration($seg['duration']??null);if($d===null)$known=false;else $duration+=$d;}
+        echo '<div class="onb-leg"><div class="onb-leg-label">'.h($direction==='INBOUND'?'Return':'Outbound').'</div><div class="onb-timeline"><div><strong>'.h(onbPremiumTime($first['departureTime']??null)).'</strong><b>'.h($first['originCode']).'</b><small>'.h(onbPremiumDateLabel($first['departureTime']??null)).'</small></div><div class="onb-route"><small>'.h($knownStops?($connections+$technical===0?'Nonstop':($connections+$technical).' stop(s)'):($connections.' connection(s)')).'</small><span></span><small>'.h(isset($times[$direction])?onbPremiumDurationText(onbPremiumDuration($times[$direction]['duration']??null)):($known?onbPremiumDurationText($duration).' flight segments':'')).'</small></div><div><strong>'.h(onbPremiumTime($last['arrivalTime']??null)).'</strong><b>'.h($last['destinationCode']).'</b><small>'.h(onbPremiumDateLabel($last['arrivalTime']??null)).'</small></div></div></div>';
     }
 }
 function onbPremiumResults(string $kind,array $search): void {
@@ -126,9 +127,9 @@ function onbPremiumResults(string $kind,array $search): void {
         usort($items,fn($a,$b)=>$a['price']<=>$b['price']);
         foreach(array_slice($items,0,100) as $it){
             $legs=$it['legs'];$j=$it['journey'];$o=$it['offer'];$first=reset($legs)[0];$airline=(string)($first['carrier']['marketingName']??$first['carrier']['marketingCode']??'Airline not supplied');
-            $stops=0;$names=[];$duration=onbPremiumDuration($j['duration']??null);
-            foreach($legs as $segments){$stops+=max(0,count($segments)-1);foreach($segments as $seg){$t=$seg['technicalStops']??null;$stops+=is_array($t)?count($t):(is_numeric($t)?(int)$t:0);$names[]=(string)($seg['carrier']['marketingName']??'');}}
-            echo '<article class="onb-travel-result onb-flight-result" data-result data-price="'.h($it['price']).'" data-duration="'.h($duration??'').'" data-name="'.h(implode(' ',$names)).'" data-stops="'.h($stops).'"><div class="onb-airline">';onbPremiumImage($first['carrier']['marketingLogo']??null,$airline,'onb-airline-logo');echo '<div><b>'.h($airline).'</b><small>'.h($o['fare']['family']??$o['cabinClass']??'Flight offer').'</small></div></div><div class="onb-flight-itinerary">';onbPremiumFlightTimeline($legs);echo '<details class="onb-rate-details"><summary>View flight details &amp; fare rules</summary>';onbFlightSearchDetails($j,$o);echo '</details></div><div class="onb-flight-actions"><div class="onb-price"><small>Total for '.(int)$search['adults'].' adult(s)</small><strong>'.h(onbTravelMoney($it['price'],'CAD')).'</strong></div>';
+            $stops=0;$names=[];$duration=onbPremiumDuration($j['totalDuration']??null);$stopsKnown=true;
+            foreach($legs as $segments){$stops+=max(0,count($segments)-1);foreach($segments as $seg){$t=$seg['stopCount']??null;if(is_numeric($t))$stops+=(int)$t;else $stopsKnown=false;$names[]=(string)($seg['carrier']['marketingName']??'');}}
+            echo '<article class="onb-travel-result onb-flight-result" data-result data-price="'.h($it['price']).'" data-duration="'.h($duration??'').'" data-name="'.h(implode(' ',$names)).'" data-stops="'.h($stopsKnown?$stops:'').'"><div class="onb-airline">';onbPremiumImage($first['carrier']['marketingLogo']??null,$airline,'onb-airline-logo');echo '<div><b>'.h($airline).'</b><small>'.h($o['fare']['family']??$o['cabinClass']??'Flight offer').'</small></div></div><div class="onb-flight-itinerary">';onbPremiumFlightTimeline($legs,$j);echo '<details class="onb-rate-details"><summary>View flight details &amp; fare rules</summary>';onbFlightSearchDetails($j,$o);echo '</details></div><div class="onb-flight-actions"><div class="onb-price"><small>Total for '.(int)$search['adults'].' adult(s)</small><strong>'.h(onbTravelMoney($it['price'],'CAD')).'</strong></div>';
             onbFlightOfferButton($o,$summary,(int)$search['adults']);
             onbTravelQuote("Flight enquiry\n".$summary."\n".$airline."\n".onbTravelMoney($it['price'],'CAD'),'Request quote');echo '</div></article>';$count++;
         }
