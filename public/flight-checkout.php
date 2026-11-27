@@ -58,10 +58,26 @@ function onbFlightPersonDate(string $key): DateTimeImmutable {
     if(!$d||$d->format('Y-m-d')!==$v)throw new RuntimeException('Check the passenger dates.');
     return $d;
 }
+/* Validate only the documented payment fields; never log or display credential values. */
+function onbFlightPaymentCredentials(array $data,bool $sandbox): array {
+    global $c;
+    $expected=$sandbox?'pk_test_':'pk_live_';
+    $supplierKey=is_string($data['publishableKey']??null)?trim($data['publishableKey']):'';
+    $configuredKey=trim((string)($c['nuitee'][$sandbox?'stripe_test_publishable_key':'stripe_live_publishable_key']??''));
+    $key=$supplierKey!==''?$supplierKey:$configuredKey;
+    $secret=is_string($data['secretKey']??null)?trim($data['secretKey']):'';
+    $issues=[];
+    if($key==='')$issues[]='Nuitée did not supply a publishable key and the matching dashboard key is not configured.';
+    elseif(!str_starts_with($key,$expected)||preg_match('/\s/',$key))$issues[]='The payment publishable key is invalid or does not match the API environment.';
+    if(!str_starts_with($secret,'pi_')||!str_contains($secret,'_secret_')||preg_match('/\s/',$secret))$issues[]='The supplier did not return a usable Stripe PaymentIntent client secret.';
+    $types=$data['paymentTypes']??null;
+    if(is_array($types)&&$types&&!in_array('TRANSACTION_ID',$types,true))$issues[]='The supplier did not list TRANSACTION_ID as an available payment method.';
+    return ['secret'=>$issues?'':$secret,'publishable'=>$issues?'':$key,'payment_issue'=>implode(' ',$issues)];
+}
 function onbFlightCheckoutAction(string $action, bool $admin): void {
     global $u,$c;
     if(!$u||!onbTravelCanSearch('flights',$admin))throw new RuntimeException('Sign in to access flight checkout.');
-    if(in_array($action,['nuitee_select','nuitee_prebook'],true)){
+    if(in_array($action,['nuitee_select','nuitee_prebook','nuitee_recover_payment'],true)){
         $ip=$_SERVER['REMOTE_ADDR']??'unknown';
         if((int)q('SELECT COUNT(*) FROM attempts WHERE ip=? AND created_at > NOW()-INTERVAL 15 MINUTE',[$ip])->fetchColumn()>=15)throw new RuntimeException('Too many requests. Try again later.');
         q('INSERT INTO attempts(ip) VALUES(?)',[$ip]);
@@ -80,6 +96,18 @@ function onbFlightCheckoutAction(string $action, bool $admin): void {
     }
     $s=onbFlightCheckoutState();
     if(!onbFlightPaymentAllowed($admin))throw new RuntimeException('Direct payments are not enabled. No payment has been taken.');
+    if($action==='nuitee_recover_payment'){
+        if(empty($s['checkout_id'])||($s['state']??'')!=='PREBOOKED')throw new RuntimeException('There is no recoverable checkout. Contact support.');
+        $record=q('SELECT * FROM onb_flight_checkouts WHERE checkout_id=? AND user_id=? AND sandbox=? AND state=?',[$s['checkout_id'],(int)$u['id'],(int)$s['sandbox'],'PREBOOKED'])->fetch(PDO::FETCH_ASSOC);
+        if(!$record)throw new RuntimeException('Checkout status could not be verified. Do not pay again.');
+        $res=onbTravelRequest('/flights/prebooks/'.$record['prebook_id'],[]);
+        $data=$res['data'][0]??$res['data']??[];
+        if(!is_array($data)||($data['prebookId']??null)!==$record['prebook_id']||($data['transactionId']??null)!==$record['transaction_id']||($data['currency']??'')!==$record['currency']||!is_numeric($data['price']??null)||round((float)$data['price'],2)!==round((float)$record['amount'],2))throw new RuntimeException('The original prebook or payment amount could not be matched. Do not start a new payment; contact support.');
+        $s=array_replace($s,onbFlightPaymentCredentials($data,(bool)$s['sandbox']));
+        $_SESSION['onb_flight_checkout']=$s;
+        if($s['payment_issue']!=='')throw new RuntimeException('Payment form is unavailable. '.($admin?$s['payment_issue'].' ':'').'No new payment was initiated. Contact support if this persists.');
+        go('page=flight_checkout');
+    }
     if($action==='nuitee_prebook'){
         if(!empty($s['checkout_id']))throw new RuntimeException('A checkout already exists. Do not create another payment.');
         if(p('accept_fare')!=='1')throw new RuntimeException('Review and accept the fare and booking terms first.');
@@ -100,22 +128,18 @@ function onbFlightCheckoutAction(string $action, bool $admin): void {
         }
         if($s['sandbox']&&p('test_data')!=='1')throw new RuntimeException('Use fictional passenger details and a Stripe test card in sandbox.');
         onbFlightCheckoutTable();
-        $pk=(string)($c['nuitee'][$s['sandbox']?'stripe_test_publishable_key':'stripe_live_publishable_key']??'');
-        $expected=$s['sandbox']?'pk_test_':'pk_live_';
         $res=onbTravelRequest('/flights/prebooks',['offerId'=>$s['offerId'],'usePaymentSdk'=>true,'contact'=>$contact,'passengers'=>$passengers]);
         $data=$res['data'][0]??$res['data']??[];
-        $pk=(string)($data['publishableKey']??$pk);
-        $prebook=$data['prebookId']??'';$transaction=$data['transactionId']??'';$secret=$data['secretKey']??'';
+        $prebook=$data['prebookId']??'';$transaction=$data['transactionId']??'';
         if(!is_string($prebook)||!$prebook||strlen($prebook)>255||!is_string($transaction)||!$transaction||strlen($transaction)>255)throw new RuntimeException('The supplier did not return checkout references. Contact support.');
         $amount=$data['price']??null;$currency=$data['currency']??'';
         if(!is_numeric($amount)||!is_finite((float)$amount)||(float)$amount<=0||$currency!=='CAD')throw new RuntimeException('The supplier did not return a valid CAD payment amount. No payment was taken.');
         $checkout=bin2hex(random_bytes(24));
         q('INSERT INTO onb_flight_checkouts(checkout_id,user_id,sandbox,prebook_id,transaction_id,amount,currency,state) VALUES(?,?,?,?,?,?,?,?)',[$checkout,(int)$u['id'],(int)$s['sandbox'],$prebook,$transaction,$amount,$currency,'PREBOOKED']);
         $s['checkout_id']=$checkout;$s['payment_price']=round((float)$amount,2);$s['contact_email']=$email;$s['state']='PREBOOKED';
-        $s['secret']=is_string($secret)&&str_starts_with($secret,'pi_')&&str_contains($secret,'_secret_')?$secret:'';
-        $s['publishable']=str_starts_with($pk,$expected)?$pk:'';
+        $s=array_replace($s,onbFlightPaymentCredentials($data,(bool)$s['sandbox']));
         $_SESSION['onb_flight_checkout']=$s;
-        if(!$s['secret']||!$s['publishable'])throw new RuntimeException('Payment form is unavailable. Contact support with the checkout reference. No payment was taken.');
+        if($s['payment_issue']!=='')throw new RuntimeException('Payment form is unavailable. '.($admin?$s['payment_issue'].' ':'').'No payment was initiated by this page. Use Recover secure payment below.');
         go('page=flight_checkout');
     }
     if($action==='nuitee_finalize'){
@@ -171,7 +195,13 @@ function onbFlightCheckoutView(bool $admin): void {
             echo '<form id="onb-flight-finalize" method="post" action="?page=flight_checkout">'.token().'<input type="hidden" name="action" value="nuitee_finalize"></form>';
             echo '<button type="button" id="onb-flight-recover" disabled>Check payment / retry booking confirmation</button></div>';
             echo '<script src="https://js.stripe.com/v3/" defer></script><script src="flight-checkout.js?v=3" defer></script>';
-        }else echo '<p>Payment form unavailable. Contact support.</p>';
+        }else{
+            echo '<p>Payment form unavailable. Do not create a second booking until this checkout has been reviewed.</p>';
+            if($state==='PREBOOKED'){
+                if($admin&&!empty($s['payment_issue']))echo '<p class="notice">'.h($s['payment_issue']).'</p>';
+                echo '<form method="post" action="?page=flight_checkout">'.token().'<input type="hidden" name="action" value="nuitee_recover_payment"><button type="submit">Recover secure payment</button></form><p class="muted">Retrieves the existing supplier prebook without creating another payment intent.</p>';
+            }
+        }
         echo '</section>';return;
     }
     if($s['expires']<time()){echo '<p>Offer expired.</p><a class="btn" href="?page=flights">Search again</a>';return;}
