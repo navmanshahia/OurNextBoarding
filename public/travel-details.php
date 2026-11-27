@@ -98,6 +98,15 @@ function onbHotelDetailView(array $s): void {
     foreach(array_slice($hotel['hotelFacilities']??[],0,60) as $facility)if(is_string($facility))echo '<li>'.h($facility).'</li>';
     echo '</ul>';
     foreach(['checkin'=>'Check-in','checkout'=>'Check-out'] as $key=>$label)if(is_string($hotel['checkinCheckoutTimes'][$key]??null))echo '<p>'.h($label.': '.$hotel['checkinCheckoutTimes'][$key]).'</p>';
+    $mapped=[];
+    foreach(($s['rates']??[]) as $rate)if(isset($rate['mappedRoomId']))$mapped[]=(string)$rate['mappedRoomId'];
+    foreach(($hotel['rooms']??[]) as $room){
+        if(!is_array($room)||!in_array((string)($room['id']??''),$mapped,true))continue;
+        echo '<h3>'.h($room['roomName']??$room['roomTitle']??'Room details').'</h3>';
+        if(is_string($room['description']??null))echo '<p>'.h(strip_tags($room['description'])).'</p>';
+        if(is_numeric($room['roomSizeSquare']??null))echo '<p>Room size: '.h($room['roomSizeSquare'].' '.($room['roomSizeUnit']??'m²')).'</p>';
+        if(isset($room['maxAdults']))echo '<p>Maximum adults: '.h($room['maxAdults']).'</p>';
+    }
     echo '</section>';
 }
 
