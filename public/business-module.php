@@ -1,0 +1,61 @@
+<?php
+if(!isset($db)){http_response_code(404);exit;}
+function businessSetup(){
+ bookingSetup();bookingPolicySetup();bookingCancellationSetup();departureSetup();depCheckoutSetup();agentSetup();agentExtrasSetup();rewardSetup();premiumSetup();growthSetup();
+ q("CREATE TABLE IF NOT EXISTS onb_crm (lead_id INT PRIMARY KEY,stage VARCHAR(30) NOT NULL DEFAULT 'new',followup DATE NULL,notes TEXT NOT NULL) ENGINE=InnoDB");
+ q("CREATE TABLE IF NOT EXISTS onb_campaign_leads(lead_id INT PRIMARY KEY,source VARCHAR(80) NOT NULL,campaign VARCHAR(80) NOT NULL) ENGINE=InnoDB");
+ q("CREATE TABLE IF NOT EXISTS onb_visa_checklist(booking_id INT NOT NULL,item VARCHAR(40) NOT NULL,done TINYINT NOT NULL DEFAULT 0,PRIMARY KEY(booking_id,item)) ENGINE=InnoDB");
+ q("CREATE TABLE IF NOT EXISTS onb_business_mail(event_key VARCHAR(100) PRIMARY KEY,status VARCHAR(20) NOT NULL,updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB");
+}
+function businessToday(){return (new DateTimeImmutable('now',new DateTimeZone('America/Vancouver')))->format('Y-m-d');}
+function businessMetrics($days){
+ $since=(new DateTimeImmutable('now',new DateTimeZone('America/Vancouver')))->modify('-'.$days.' days')->format('Y-m-d H:i:s');
+ $leads=q("SELECT COALESCE(c.stage,'new') stage,COUNT(*) n FROM enquiries e LEFT JOIN onb_crm c ON c.lead_id=e.id WHERE e.created_at>=? GROUP BY COALESCE(c.stage,'new')",[$since])->fetchAll(PDO::FETCH_KEY_PAIR);
+ $campaign=q("SELECT COALESCE(a.source,'Unattributed') source,COALESCE(a.campaign,'') campaign,COUNT(*) leads,SUM(CASE WHEN EXISTS(SELECT 1 FROM users u JOIN onb_bookings b ON b.user_id=u.id WHERE LOWER(u.email)=LOWER(e.email) AND b.trip_id=e.trip_id AND b.created_at>=e.created_at AND b.stage IN ('confirmed','completed')) THEN 1 ELSE 0 END) matched FROM enquiries e LEFT JOIN onb_campaign_leads a ON a.lead_id=e.id WHERE e.created_at>=? GROUP BY COALESCE(a.source,'Unattributed'),COALESCE(a.campaign,'') ORDER BY leads DESC",[$since])->fetchAll();
+ return [$leads,$campaign];
+}
+function businessMoney($n){return 'CAD $'.number_format((float)$n,2);}
+function businessChecklist($b,$admin){
+ $items=['Passport validity checked','Visa requirements reviewed','Application documents prepared','Application submitted','Decision received'];
+ $done=q('SELECT item,done FROM onb_visa_checklist WHERE booking_id=?',[$b['id']])->fetchAll(PDO::FETCH_KEY_PAIR);
+ echo '<section class="onb-luxe-card"><h3>Visa preparation checklist</h3><p>Progress is administrative only; requirements vary by traveller. Do not upload identity documents here.</p>';
+ if($admin){form('biz_visa');echo '<input type="hidden" name="id" value="'.h($b['id']).'">';}
+ foreach($items as $i=>$label){if($admin)echo '<label><input type="checkbox" name="item_'.$i.'" value="1" '.(!empty($done[$label])?'checked':'').'> '.h($label).'</label>';else echo '<p>'.(!empty($done[$label])?'Complete':'Pending').' — '.h($label).'</p>';}
+ if($admin)echo '<button>Save checklist</button></form>';echo '</section>';
+}
+function businessAction($action,$u,$admin){global $db;if(!$u||!$admin)throw new RuntimeException('Access denied.');businessSetup();
+ if($action==='biz_visa'){$id=(int)p('id');if(!q('SELECT id FROM onb_bookings WHERE id=?',[$id])->fetchColumn())throw new RuntimeException('Booking not found.');$db->beginTransaction();try{foreach(['Passport validity checked','Visa requirements reviewed','Application documents prepared','Application submitted','Decision received'] as $i=>$label)q('INSERT INTO onb_visa_checklist VALUES(?,?,?) ON DUPLICATE KEY UPDATE done=VALUES(done)',[$id,$label,p('item_'.$i)==='1'?1:0]);$db->commit();}catch(Throwable $e){$db->rollBack();throw $e;}go('page=bookings');}
+ throw new RuntimeException('Unknown action.');
+}
+function businessTable($headers,$rows){echo '<div class="dash-table"><table><thead><tr>';foreach($headers as $v)echo '<th>'.h($v).'</th>';echo '</tr></thead><tbody>';if(!$rows)echo '<tr><td colspan="'.count($headers).'">No records yet.</td></tr>';foreach($rows as $row){echo '<tr>';foreach($row as $v)echo '<td>'.h($v).'</td>';echo '</tr>';}echo '</tbody></table></div>';}
+function businessDashboard($u,$admin){
+ if(!$u||!$admin){http_response_code(403);echo '<p>Administrator access required.</p>';return;}businessSetup();$days=(int)($_GET['days']??30);if(!in_array($days,[30,90,365],true))$days=30;[$leads,$campaign]=businessMetrics($days);
+ $bookings=q("SELECT b.*,t.title,p.departure,p.visa,u.email,COALESCE(m.net,0) net FROM onb_bookings b JOIN trips t ON t.id=b.trip_id JOIN users u ON u.id=b.user_id LEFT JOIN onb_booking_policy p ON p.booking_id=b.id LEFT JOIN (SELECT booking_id,SUM(CASE WHEN kind='payment' THEN amount WHEN kind='refund' THEN -amount ELSE 0 END) net FROM onb_booking_money GROUP BY booking_id)m ON m.booking_id=b.id ORDER BY b.id DESC")->fetchAll();
+ $value=0;$cash=0;$outstanding=0;$payment=[];$visa=[];$today=businessToday();$byTrip=[];
+ foreach($bookings as $b){$id=$b['trip_id'];if(!isset($byTrip[$id]))$byTrip[$id]=[0,0,0];$net=(float)$b['net'];$price=(float)$b['price'];$cash+=$net;$byTrip[$id][1]+=$net;
+ if(in_array($b['stage'],['confirmed','completed'],true)){$value+=$price;$byTrip[$id][0]+=$price;}
+ if(!in_array($b['stage'],['accepted','confirmed'],true))continue;$balance=max(0,$price-$net);$outstanding+=$balance;$byTrip[$id][2]+=$balance;
+ if($b['visa']==='pending')$visa[]=[$b['ref'],$b['title'],$b['email'],$b['departure']];
+ if(!$balance)continue;$deposit=min(500,$price);$target=max($deposit,round($price*.6,2));$deadline=$b['departure']?(new DateTimeImmutable($b['departure']))->modify('-15 days')->format('Y-m-d'):null;
+ if($deadline&&$deadline<=$today){$due=$balance;$label='Final — overdue/due';}elseif($net<$deposit){$due=$deposit-$net;$label='Deposit';}elseif(in_array($b['visa'],['approved','not_required'],true)&&$net<$target){$due=$target-$net;$label='Visa milestone';}else{$due=$balance;$label=$deadline?'Final balance':'Date not assigned';}
+ $payment[]=[$b['ref'],$b['title'],$label,$deadline??'Not set',businessMoney($due),businessMoney($balance)];
+ }
+ $credit=(float)q("SELECT COALESCE(SUM(credit),0) FROM onb_customer_referrals WHERE status='verified'")->fetchColumn()-(float)q('SELECT COALESCE(SUM(amount),0) FROM onb_customer_redemptions')->fetchColumn();
+ $commission=q("SELECT COALESCE(SUM(commission),0) FROM onb_agent_leads WHERE payout='approved' AND stage='won'")->fetchColumn();
+ $cancels=q("SELECT b.ref,t.title,r.created_at FROM onb_cancellation_requests r JOIN onb_bookings b ON b.id=r.booking_id JOIN trips t ON t.id=b.trip_id WHERE r.status='pending' ORDER BY r.created_at")->fetchAll(PDO::FETCH_NUM);
+ premiumHero('Business command centre','Bookings, cash, marketing, departures and customer actions.');echo '<p><a href="crm.php">Customer CRM</a> · <a href="?page=bookings">Manage bookings</a> · <a href="?page=departures">Manage departures</a> · <a href="?page=marketingcentre">Marketing tools</a> · <a href="?page=agents">Agent management</a></p><div class="metrics onb-luxe-metrics">';
+ foreach(['Confirmed booking value'=>$value,'Net cash in booking ledger'=>$cash,'Active booking balance'=>$outstanding,'Approved unpaid commission'=>$commission,'Unused referral credits'=>$credit] as $label=>$n)echo '<article>'.h($label).'<strong>'.h(businessMoney($n)).'</strong></article>';
+ echo '</div><p>Financial totals are all-time booking-ledger values, not recognized accounting revenue. Separate e-transfer invoices are excluded until reconciled. Marketing filters apply only to enquiries.</p><h2>Trip financial overview</h2>';
+ $trips=[];foreach(q('SELECT t.id,t.title,COALESCE(e.expense,0) expense FROM trips t LEFT JOIN (SELECT trip_id,SUM(amount) expense FROM onb_booking_expenses GROUP BY trip_id)e ON e.trip_id=t.id') as $t){$a=$byTrip[$t['id']]??[0,0,0];$trips[]=[$t['title'],businessMoney($a[0]),businessMoney($a[1]),businessMoney($a[2]),businessMoney($t['expense']),businessMoney($a[0]-$t['expense'])];}businessTable(['Journey','Confirmed value','Net cash','Active balance','Recorded costs','Value less recorded costs'],$trips);
+ echo '<p>Margin proxy only: excludes unrecorded costs, taxes, referral rewards and commissions.</p><h2>Payment deadlines</h2>';businessTable(['Booking','Journey','Next milestone','Final deadline','Milestone CAD','Total outstanding'],$payment);
+ echo '<h2>Pending visa applications</h2>';businessTable(['Booking','Journey','Traveller email','Departure'],$visa);
+ echo '<h2>Cancellation requests</h2>';businessTable(['Booking','Journey','Requested'],$cancels);
+ echo '<h2>Upcoming departures & waitlists</h2>';$departures=[];foreach(q("SELECT d.*,t.title FROM onb_departures d JOIN trips t ON t.id=d.trip_id WHERE d.active=1 AND d.start_date>=? ORDER BY d.start_date",[$today]) as $d){$wait=q("SELECT COALESCE(SUM(adults+children),0) FROM onb_departure_requests WHERE departure_id=? AND status='waitlist'",[$d['id']])->fetchColumn();$departures[]=[$d['title'],$d['start_date'],depUsed($d['id']),$d['capacity'],$wait];}businessTable(['Journey','Departure','Reserved seats','Capacity','Waitlisted people'],$departures);
+ echo '<h2>Agent performance</h2>';$agents=[];foreach(q("SELECT u.name,COUNT(l.id) leads,SUM(CASE WHEN l.stage='won' AND l.payout IN ('approved','paid') THEN 1 ELSE 0 END) wins,SUM(CASE WHEN l.payout='approved' THEN l.commission ELSE 0 END) unpaid FROM onb_agents a JOIN users u ON u.id=a.user_id LEFT JOIN onb_agent_leads l ON l.agent_id=a.user_id GROUP BY a.user_id,u.name ORDER BY wins DESC") as $a)$agents[]=[$a['name'],$a['leads'],$a['wins'],$a['leads']?round(100*$a['wins']/$a['leads'],1).'%':'—',businessMoney($a['unpaid'])];businessTable(['Agent','Leads','Verified wins','Win rate','Approved unpaid'],$agents);
+ echo '<h2>Free trip liabilities</h2><p>Unredeemed customer free trips: '.h(q('SELECT COUNT(*) FROM onb_customer_free WHERE redeemed_at IS NULL')->fetchColumn()).' · Unredeemed agent free trips: '.h(q('SELECT COUNT(*) FROM onb_agent_rewards WHERE redeemed_at IS NULL')->fetchColumn()).'</p>';
+ echo '<h2>Sales pipeline and marketing attribution</h2><p>';foreach([30,90,365] as $n)echo '<a href="?page=business&amp;days='.$n.'">'.$n.' days</a> · ';echo '</p><div class="metrics">';foreach(['new','contacted','qualified','quote sent','won','lost'] as $stage)echo '<article>'.h(ucfirst($stage)).'<strong>'.h($leads[$stage]??0).'</strong></article>';echo '</div>';
+ $rows=[];foreach($campaign as $a)$rows[]=[$a['source'],$a['campaign'],$a['leads'],$a['matched'],$a['leads']?round(100*$a['matched']/$a['leads'],1).'%':'—'];businessTable(['Source','Campaign','Enquiries','Matched confirmed','Match rate'],$rows);echo '<p>Match rate is an enquiry-level proxy using email, journey and booking chronology; repeat enquiries may match the same booking. No visitor or ad-spend tracking.</p>';
+ $due=q("SELECT e.name,e.email,c.followup,c.stage FROM enquiries e JOIN onb_crm c ON c.lead_id=e.id WHERE c.followup<=? AND c.stage NOT IN ('won','lost') ORDER BY c.followup",[$today])->fetchAll(PDO::FETCH_NUM);echo '<h2>CRM follow-ups due</h2>';businessTable(['Customer','Email','Due','Stage'],$due);
+ $abandoned=q("SELECT u.name,u.email,t.title,r.created_at,r.status FROM onb_departure_requests r JOIN users u ON u.id=r.user_id JOIN onb_departures d ON d.id=r.departure_id JOIN trips t ON t.id=d.trip_id JOIN onb_checkout x ON x.request_id=r.id WHERE r.status IN ('requested','reserved') AND x.booking_id IS NULL AND r.created_at<=NOW()-INTERVAL 1 DAY AND d.start_date>=CURRENT_DATE ORDER BY r.created_at")->fetchAll(PDO::FETCH_NUM);echo '<h2>Incomplete checkout recovery</h2><p>Requests older than 24 hours without a booking; review before contacting. No unsolicited customer marketing is sent.</p>';businessTable(['Traveller','Email','Journey','Requested','Status'],$abandoned);
+ echo '<h2>Automation delivery log</h2>';businessTable(['Event','Status','Updated'],q('SELECT event_key,status,updated_at FROM onb_business_mail ORDER BY updated_at DESC LIMIT 30')->fetchAll(PDO::FETCH_NUM));
+}
