@@ -30,15 +30,16 @@ function onbTravelDate(string $value): DateTimeImmutable {
 }
 function onbTravelRequest(string $path, array $body): array {
     $s = onbTravelSettings();
-    if (!in_array($path, ['/hotels/rates','/flights/rates','/flights/verify','/flights/prebooks','/flights/bookings','/rates/prebook','/rates/book'], true)) throw new RuntimeException('Invalid search.');
+    $isPrebookGet=preg_match('~^/flights/prebooks/[A-Za-z0-9_-]{1,255}$~D',$path)===1;
+    if (!$isPrebookGet && !in_array($path, ['/hotels/rates','/flights/rates','/flights/verify','/flights/prebooks','/flights/bookings','/rates/prebook','/rates/book'], true)) throw new RuntimeException('Invalid search.');
     $base=in_array($path,['/rates/prebook','/rates/book'],true)?'https://book.liteapi.travel/v3.0':'https://api.liteapi.travel/v3.0';
     $curl = curl_init($base.$path);
     curl_setopt_array($curl, [
-        CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode($body, JSON_THROW_ON_ERROR),
         CURLOPT_HTTPHEADER => ['Content-Type: application/json','Accept: application/json','X-API-Key: '.$s['key']],
         CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 8, CURLOPT_TIMEOUT => in_array($path,['/rates/prebook','/rates/book','/flights/prebooks','/flights/bookings'],true)?120:35,
         CURLOPT_FOLLOWLOCATION => false, CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2
     ]);
+    if(!$isPrebookGet)curl_setopt_array($curl,[CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>json_encode($body,JSON_THROW_ON_ERROR)]);
     $raw = curl_exec($curl);
     $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
     $curlCode = curl_errno($curl);
@@ -49,7 +50,7 @@ function onbTravelRequest(string $path, array $body): array {
     $diagnostic = 'HTTP '.$status.'; supplier code '.$supplierCode.'; cURL '.$curlCode.'; '.($s['sandbox'] ? 'sandbox' : 'production');
     global $admin;
     $detail = $admin ? ' ('.$diagnostic.')' : '';
-    if ($status !== 200 || !is_array($data) || isset($data['error'])) error_log('Nuitee '.$path.' '.$diagnostic);
+    if ($status !== 200 || !is_array($data) || isset($data['error'])) error_log('Nuitee '.($isPrebookGet?'/flights/prebooks/{id}':$path).' '.$diagnostic);
     if ($status === 401) throw new RuntimeException('Supplier authentication failed. Please check the secret API key or request a quote.'.$detail);
     if ($status === 403) throw new RuntimeException('Supplier denied API access. Please check account or product permissions or request a quote.'.$detail);
     if ($status === 429) throw new RuntimeException('Search capacity is temporarily reached. Please try again later.'.$detail);
