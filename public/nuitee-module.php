@@ -5,9 +5,10 @@ declare(strict_types=1);
 function onbTravelSettings(): array {
     global $c;
     $settings = is_array($c['nuitee'] ?? null) ? $c['nuitee'] : [];
-    $key = (string)($settings['api_key'] ?? getenv('NUITEE_API_KEY') ?: '');
+    $key = trim((string)($settings['api_key'] ?? getenv('NUITEE_API_KEY') ?: ''));
     return [
         'key' => $key,
+        'valid_key' => (str_starts_with($key, 'prod_') || str_starts_with($key, 'sand_')) && !str_starts_with($key, 'prod_public_') && !str_starts_with($key, 'sand_public_') && !preg_match('/\s/', $key),
         'sandbox' => str_starts_with($key, 'sand_'),
         'enabled' => ($settings['public_search'] ?? false) === true,
         'flights' => ($settings['flights_enabled'] ?? false) === true,
@@ -16,9 +17,9 @@ function onbTravelSettings(): array {
 }
 function onbTravelCanSearch(string $kind, bool $admin): bool {
     $s = onbTravelSettings();
-    if (!$s['key'] || !function_exists('curl_init')) return false;
+    if (!$s['valid_key'] || !function_exists('curl_init')) return false;
     if ($kind === 'flights' && !$s['flights']) return false;
-    return $s['sandbox'] ? $admin : $s['enabled'];
+    return $s['sandbox'] ? $admin : ($admin || $s['enabled']);
 }
 function onbTravelDate(string $value): DateTimeImmutable {
     $d = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
@@ -38,13 +39,23 @@ function onbTravelRequest(string $path, array $body): array {
         CURLOPT_FOLLOWLOCATION => false, CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2
     ]);
     $raw = curl_exec($curl);
-    $status = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    $curlCode = curl_errno($curl);
     curl_close($curl);
-    if ($status === 401 || $status === 403) throw new RuntimeException('Travel search is not activated for this service. Please request a quote.');
-    if ($status === 429) throw new RuntimeException('Search capacity is temporarily reached. Please try again later.');
-    if ($raw === false || $status !== 200) throw new RuntimeException('The travel supplier is temporarily unavailable. Please try again or request a quote.');
-    $data = json_decode($raw, true);
-    if (!is_array($data) || isset($data['error'])) throw new RuntimeException('The supplier did not return usable results. Please try again.');
+    $data = is_string($raw) ? json_decode($raw, true) : null;
+    $supplierCode = is_array($data) && is_array($data['error'] ?? null) ? ($data['error']['code'] ?? null) : null;
+    $supplierCode = is_scalar($supplierCode) && preg_match('/^[0-9]{1,10}$/D', (string)$supplierCode) ? (string)$supplierCode : 'not supplied';
+    $diagnostic = 'HTTP '.$status.'; supplier code '.$supplierCode.'; cURL '.$curlCode.'; '.($s['sandbox'] ? 'sandbox' : 'production');
+    global $admin;
+    $detail = $admin ? ' ('.$diagnostic.')' : '';
+    if ($status !== 200 || !is_array($data) || isset($data['error'])) error_log('Nuitee '.$path.' '.$diagnostic);
+    if ($status === 401) throw new RuntimeException('Supplier authentication failed. Please check the secret API key or request a quote.'.$detail);
+    if ($status === 403) throw new RuntimeException('Supplier denied API access. Please check account or product permissions or request a quote.'.$detail);
+    if ($status === 429) throw new RuntimeException('Search capacity is temporarily reached. Please try again later.'.$detail);
+    if ($status === 400 || $status === 422) throw new RuntimeException('The supplier rejected the search parameters. Please check the search or request a quote.'.$detail);
+    if ($raw === false || $status !== 200) throw new RuntimeException('The travel supplier is temporarily unavailable. Please try again or request a quote.'.$detail);
+    if ($supplierCode === '2001') return ['data'=>[]];
+    if (!is_array($data) || isset($data['error'])) throw new RuntimeException('The supplier did not return usable results. Please try again.'.$detail);
     return $data;
 }
 function onbTravelMoney($amount, $currency): string {
@@ -67,7 +78,7 @@ function onbTravelSearch(string $kind, bool $admin): array {
         $rooms = filter_var(p('rooms'), FILTER_VALIDATE_INT, ['options'=>['min_range'=>1,'max_range'=>5]]);
         if (!$rooms || $rooms > $adults || $adults > 4*$rooms) throw new RuntimeException('Choose 1–5 rooms with 1–4 adults per room.');
         $occ = [];
-        for ($i=0; $i<$rooms; $i++) $occ[] = ['adults'=>intdiv($adults,$rooms)+($i<$adults%$rooms?1:0)];
+        for ($i=0; $i<$rooms; $i++) $occ[] = ['rooms'=>1,'adults'=>intdiv($adults,$rooms)+($i<$adults%$rooms?1:0)];
         $result = onbTravelRequest('/hotels/rates', [
             'cityName'=>$city,'countryCode'=>$country,'guestNationality'=>$nationality,
             'checkin'=>$start->format('Y-m-d'),'checkout'=>$end->format('Y-m-d'),
@@ -153,7 +164,13 @@ function onbTravelView(string $kind, bool $admin, ?array $search=null): void {
     $hotel=$kind==='hotels'; $settings=onbTravelSettings(); $canSearch=onbTravelCanSearch($kind,$admin);
     $tomorrow=(new DateTimeImmutable('tomorrow'))->format('Y-m-d');
     echo '<section class="onb-travel-hero"><span class="eyebrow">OUR NEXT BOARDING / BOOK YOUR WAY</span><h1>'.($hotel?'Find your perfect stay.':'Your next flight starts here.').'</h1><p>'.($hotel?'Explore stays for your next adventure.':'Search flights for your next adventure.').'</p><nav class="onb-travel-tabs"><a '.(!$hotel?'aria-current="page" ':'').'href="?page=flights">Flights</a><a '.($hotel?'aria-current="page" ':'').'href="?page=hotels">Hotels</a><a href="?page=trips">Group journeys</a></nav></section>';
-    if ($settings['sandbox']&&$admin) echo '<p class="notice">Administrator sandbox mode — test inventory, not bookable.</p>';
+    if ($admin) {
+        if (!$settings['valid_key']) echo '<p class="notice">Administrator: configure a secret prod_ or sand_ API key in private/config.php. Public/HMAC keys are not supported by this integration.</p>';
+        elseif (!function_exists('curl_init')) echo '<p class="notice">Administrator: PHP cURL is unavailable.</p>';
+        elseif (!$hotel && !$settings['flights']) echo '<p class="notice">Administrator: local flights_enabled setting is false.</p>';
+        elseif ($settings['sandbox']) echo '<p class="notice">Administrator sandbox mode — test inventory, not bookable.</p>';
+        elseif (!$settings['enabled']) echo '<p class="notice">Administrator production search test — public searches are disabled.</p>';
+    }
     if (!$canSearch) echo '<p class="notice">Online booking search is not yet available. Our team can help with a personalized travel enquiry.</p>';
     if ($canSearch) {
         echo '<form class="onb-travel-search" method="post" action="?page='.h($kind).'">'.token().'<input type="hidden" name="action" value="nuitee_search"><div class="onb-travel-fields">';
