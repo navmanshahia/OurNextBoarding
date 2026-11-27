@@ -117,3 +117,57 @@
 @media(max-width:760px){.onb-premium .onb-travel-hero{min-height:330px;border-radius:18px;padding:30px 24px 55px}.onb-premium .onb-travel-search{width:calc(100% - 16px);margin-top:-25px;padding:18px}.onb-premium .onb-results-layout,.onb-premium .onb-checkout-layout{grid-template-columns:1fr}.onb-premium .onb-filter-panel,.onb-premium .onb-checkout-aside{position:static}.onb-premium .onb-filter-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.onb-premium .onb-checkout-steps li{flex-direction:column;text-align:center;font-size:10px}.onb-premium .onb-checkout-aside{grid-row:1}.onb-premium .onb-flight-result{grid-template-columns:1fr;gap:10px;padding:16px}.onb-premium .onb-flight-actions{border-left:0;border-top:1px solid var(--onb-line);padding:14px 0 0}.onb-premium .onb-price{text-align:left}.onb-premium .onb-room-offer{grid-template-columns:1fr}.onb-premium .onb-room-actions{text-align:left}.onb-premium .onb-property-heading{flex-wrap:wrap}.onb-premium .onb-property-image{height:210px;min-height:0}.onb-premium .onb-property-content{padding:16px}.onb-premium .onb-search-bottom{flex-direction:column;align-items:stretch}.onb-premium .onb-detail-gallery{grid-template-columns:repeat(2,minmax(0,1fr))}.onb-premium .onb-detail-gallery img{height:135px}.onb-premium .onb-detail-gallery a:first-child img{height:220px}}
 @media(max-width:410px){.onb-premium .onb-travel-fields,.onb-premium .onb-checkout-primary .onb-travel-fields{grid-template-columns:1fr}.onb-premium .onb-filter-controls{grid-template-columns:1fr}.onb-premium .onb-suggestions{min-width:0}}
 @media(prefers-reduced-motion:reduce){.onb-premium *, .onb-premium *:before,.onb-premium *:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* Checkout refinement: independently scoped, no search-page changes. */
+.onb-premium .onb-checkout-head{margin:18px 0 24px;padding:25px 30px 0;background:linear-gradient(112deg,#102c25,#193f35 62%,#294d40);color:#f8f6f0;border-radius:22px;overflow:hidden;box-shadow:0 16px 40px #102c251a}
+.onb-premium .onb-checkout-back{font-size:12px;color:#e8dcc5;text-decoration:none;display:inline-block;margin-bottom:16px}
+.onb-premium .onb-checkout-heading{display:flex;justify-content:space-between;align-items:center;gap:18px}
+.onb-premium .onb-checkout-heading .onb-kicker{color:#e7c68a}
+.onb-premium .onb-checkout-heading h1{font-size:clamp(32px,4vw,52px);margin:7px 0;color:#fff}
+.onb-premium .onb-checkout-heading p{color:#f8f6f0c9;font-size:14px;margin:0 0 8px}
+.onb-premium .onb-checkout-trust{border:1px solid #ffffff55;border-radius:100px;padding:9px 14px;color:#f8f6f0;font-size:11px;white-space:nowrap}
+.onb-premium .onb-checkout-head .onb-checkout-steps{margin:14px -30px 0;padding:16px 30px;border:0;border-top:1px solid #ffffff26;background:#00000018}
+.onb-premium .onb-checkout-head .onb-checkout-steps li{color:#f8f6f0ba;font-size:12px}
+.onb-premium .onb-checkout-head .onb-checkout-steps li[aria-current=step]{color:#fff}
+.onb-premium .onb-checkout-head .onb-checkout-steps span{border-color:#ffffff65;color:#fff;width:24px;height:24px}
+.onb-premium .onb-checkout-head .onb-checkout-steps [aria-current=step] span,.onb-premium .onb-checkout-head .onb-checkout-steps .done span{background:#e8dcc5;color:#102c25;border-color:#e8dcc5}
+.onb-premium .onb-refined-checkout{grid-template-columns:minmax(0,1fr) minmax(260px,340px);gap:22px;align-items:start}
+.onb-premium .onb-refined-checkout .onb-checkout-primary>section,.onb-premium .onb-refined-checkout .onb-checkout-primary>form{margin:0 0 16px;padding:22px;border-radius:16px;box-shadow:0 6px 25px #102c2508;min-width:0}
+.onb-premium .onb-refined-checkout .onb-checkout-summary{padding:23px;border-radius:16px;min-width:0;overflow-wrap:anywhere}
+.onb-premium .onb-checkout-section-title{display:flex;gap:12px;align-items:flex-start;margin:0 0 18px}
+.onb-premium .onb-checkout-section-title>span{flex:0 0 36px;height:36px;border-radius:12px;background:#edf3ed;color:#267a65;display:grid;place-items:center;font-size:12px;font-weight:750}
+.onb-premium .onb-checkout-section-title h2{font-size:26px;margin:0 0 4px}
+.onb-premium .onb-checkout-section-title p{font-size:13px;color:var(--onb-muted);margin:0}
+.onb-premium .onb-checkout-card .onb-leg{padding:9px 0 12px}
+.onb-premium .onb-checkout-card .onb-timeline{grid-template-columns:minmax(0,1fr) minmax(60px,1fr) minmax(0,1fr)}
+.onb-premium .onb-checkout-card .onb-timeline strong{font-size:clamp(23px,3vw,36px)}
+.onb-premium .onb-checkout-card .onb-timeline small{font-size:11px}
+.onb-premium .onb-checkout-summary h2{margin:8px 0;font-size:26px}
+.onb-premium .onb-checkout-summary>p{font-size:12px;color:var(--onb-muted);margin:0 0 12px}
+.onb-premium .onb-checkout-total{display:grid;gap:7px;padding:18px 0;margin:15px 0;border-block:1px solid #e3e5df}
+.onb-premium .onb-checkout-total span{font-size:12px;font-weight:650;color:#566963}
+.onb-premium .onb-checkout-total strong{font-size:clamp(24px,3vw,34px);letter-spacing:-.04em;font-weight:750;line-height:1.1;color:#102c25}
+.onb-premium .onb-summary-rules{margin:14px 0}
+.onb-premium .onb-summary-rules h3{font-size:20px;margin:0 0 9px}
+.onb-premium .onb-summary-rules p{display:flex;justify-content:space-between;gap:12px;font-size:12px;margin:7px 0;color:#435b51}
+.onb-premium .onb-secure-note{padding:12px;background:#f1f5f0;border-radius:9px;font-size:12px!important;margin:15px 0 0!important}
+.onb-premium .onb-checkout-availability h2{font-size:26px;margin:8px 0}
+.onb-premium .onb-checkout-availability>p{font-size:14px;max-width:54ch}
+.onb-premium .onb-checkout-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:18px}
+.onb-premium .onb-outline-link{font-weight:650;color:#267a65;font-size:13px;text-decoration:none}
+.onb-premium .onb-stay-review{display:grid;grid-template-columns:minmax(100px,150px) minmax(0,1fr);gap:17px;align-items:center;margin:0 0 16px}
+.onb-premium .onb-stay-review .onb-stay-photo{width:100%;height:115px;object-fit:cover;border-radius:12px}
+.onb-premium .onb-stay-review h3{font-size:23px;margin:0 0 7px}
+.onb-premium .onb-stay-review p{font-size:13px;color:var(--onb-muted);margin:0}
+.onb-premium .onb-refined-checkout .onb-traveller-intro{margin-bottom:0!important;border-bottom:0!important;border-radius:16px 16px 0 0!important;padding-bottom:0!important}
+.onb-premium .onb-traveller-intro .onb-checkout-section-title{margin-bottom:0}
+.onb-premium .onb-refined-checkout .onb-traveller-form{border-radius:0 0 16px 16px!important;border-top:0!important;padding-top:18px!important}
+.onb-premium .onb-traveller-form h3{font-family:inherit;font-size:15px;letter-spacing:0;font-weight:700;margin:18px 0 10px}
+.onb-premium .onb-traveller-form h3:first-child{margin-top:0}
+.onb-premium .onb-traveller-form label:has(input[type=checkbox]){display:flex;align-items:flex-start;gap:8px;margin:15px 0}
+.onb-premium .onb-continue{display:flex;justify-content:space-between;gap:12px;align-items:center;border-top:1px solid var(--onb-line);padding-top:18px;margin-top:20px}
+.onb-premium .onb-continue span{font-size:12px;color:var(--onb-muted)}
+.onb-premium .onb-payment-amount{font-size:32px;font-weight:750;letter-spacing:-.04em;margin:10px 0;color:#102c25}
+.onb-premium .onb-ref{font-size:11px;color:var(--onb-muted);overflow-wrap:anywhere}
+@media(max-width:900px){.onb-premium .onb-refined-checkout{grid-template-columns:minmax(0,1fr)}.onb-premium .onb-refined-checkout .onb-checkout-summary{position:static;grid-row:auto}.onb-premium .onb-checkout-head{padding:20px 18px 0}.onb-premium .onb-checkout-head .onb-checkout-steps{margin:12px -18px 0;padding:13px 18px}.onb-premium .onb-checkout-trust{display:none}}
+@media(max-width:520px){.onb-premium .onb-refined-checkout .onb-checkout-primary>section,.onb-premium .onb-refined-checkout .onb-checkout-primary>form{padding:16px}.onb-premium .onb-checkout-head .onb-checkout-steps li{font-size:10px;text-align:center}.onb-premium .onb-checkout-section-title h2{font-size:22px}.onb-premium .onb-continue{flex-direction:column;align-items:stretch}.onb-premium .onb-stay-review{grid-template-columns:1fr}.onb-premium .onb-stay-review .onb-stay-photo{height:175px}}

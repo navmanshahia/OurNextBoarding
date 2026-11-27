@@ -151,24 +151,17 @@ function onbFlightCheckoutView(bool $admin): void {
     global $u;
     if(!$u){echo '<h1>Sign in to book</h1><a class="btn" href="?page=login">Sign in</a>';return;}
     try{$s=onbFlightCheckoutState();}catch(RuntimeException $e){echo '<h1>Flight checkout</h1><p>'.h($e->getMessage()).'</p><a class="btn" href="?page=flights">Search flights</a>';return;}
-    echo '<span class="onb-kicker">OUR NEXT BOARDING / FLIGHT CHECKOUT</span><h1>Review your flight.</h1>';onbCheckoutProgress($s);
+    $allowed=onbFlightPaymentAllowed($admin);onbCheckoutHeader('flight',$s,$allowed);
     if($s['sandbox'])echo '<p class="notice">Sandbox test only. Use fictional passenger information and Stripe test cards. No real flight ticket.</p>';
-    ob_start();echo '<section><h2>Your itinerary</h2><p>'.h($s['summary']).'</p>';onbPremiumFlightTimeline(onbPremiumFlightLegs($s['verified']),$s['verified']);echo '<ul>';
-    foreach(($s['verified']['segments']??[]) as $seg){
-        echo '<li>'.h(($seg['originCode']??'').' → '.($seg['destinationCode']??'').' · '.($seg['carrier']['marketingName']??'').' · '.($seg['departureTime']??'').' → '.($seg['arrivalTime']??'')).'</li>';
-    }
-    echo '</ul><p class="onb-travel-price">'.h(onbTravelMoney($s['price'],'CAD')).' total for '.(int)$s['adults'].' adult(s)</p>';
-    echo '<h3>Fare conditions</h3><p>'.h($s['verified']['fare']['family']??'Fare family not stated').'</p>';
-    foreach(['refundable'=>'Refundable','changeable'=>'Changeable'] as $key=>$label){$v=$s['verified']['terms'][$key]??null;echo '<p>'.h($label.': '.($v===true?'Yes — conditions may apply':($v===false?'No':'Not stated'))).'</p>';}
-    foreach(($s['verified']['terms']['summary']??[]) as $term)if(is_string($term['message']??null))echo '<p>'.h($term['message']).'</p>';
-    echo '<h3>Included baggage</h3>';
-    $bags=$s['verified']['baggage']['included']??[];
-    if(!$bags)echo '<p>Allowance not stated; confirm before paying.</p>';
-    foreach($bags as $bag)echo '<p>'.h(($bag['bagType']??'Bag').' · '.($bag['pieces']??'?').' piece(s)'.(isset($bag['weightKg'])?' · '.$bag['weightKg'].' kg':'')).'</p>';
-    echo '</section>';$summary=ob_get_clean();echo '<div class="onb-checkout-layout"><div class="onb-checkout-primary">';try{
-    if(($s['state']??'')!=='CONFIRMED'&&!onbFlightPaymentAllowed($admin)){echo '<p class="notice">Direct payment is not enabled yet. No reservation has been made.</p>';onbTravelQuote("Flight enquiry\n".$s['summary']."\nVerified price CAD ".$s['price']);return;}
+    echo '<div class="onb-checkout-layout onb-refined-checkout"><div class="onb-checkout-primary">';
+    try{
+    echo '<section class="onb-checkout-card onb-itinerary-card">';
+    onbCheckoutSectionTitle('01','Your flight','Flight times are local to each airport.');
+    onbPremiumFlightTimeline(onbPremiumFlightLegs($s['verified']),$s['verified']);
+    echo '<details class="onb-rate-details"><summary>Full itinerary and fare conditions</summary>';onbFlightSearchDetails($s['verified'],$s['verified']);echo '</details></section>';
+    if(($s['state']??'')!=='CONFIRMED'&&!$allowed){onbCheckoutUnavailable('flight',$s,$admin);return;}
     if(!empty($s['checkout_id'])){
-        echo '<section><h2>Payment and confirmation</h2><p>Checkout reference: '.h($s['checkout_id']).'</p><p>Final amount: '.h(onbTravelMoney($s['payment_price'],'CAD')).'</p>';
+        echo '<section class="onb-checkout-card">';onbCheckoutSectionTitle('03','Secure payment','Review the final amount before authorizing your payment.');echo '<p class="onb-ref">Checkout reference: '.h($s['checkout_id']).'</p><p class="onb-payment-amount">'.h(onbTravelMoney($s['payment_price'],'CAD')).'</p>';
         $state=$s['state']??'PREBOOKED';
         if($state==='CONFIRMED'){echo '<div class="onb-confirmed"><h2>'.($s['sandbox']?'Sandbox booking confirmed':'Flight reservation confirmed').'</h2><p>Ticket issuance is separate from reservation confirmation.</p><p>Booking reference: '.h($s['booking_ref']??'').'</p><p>Booking ID: '.h($s['booking_id']??'').'</p>';foreach(($s['airline_locators']??[]) as $locator)echo '<p>Airline confirmation code: '.h($locator).'</p>';echo '<a class="btn" href="?page=flights">Search another flight</a></div></section>';return;}
         if($state!=='PREBOOKED')echo '<p class="notice">Status: '.h($state).'. Do not make another payment. Contact support if confirmation remains pending.</p>';
@@ -182,8 +175,8 @@ function onbFlightCheckoutView(bool $admin): void {
         echo '</section>';return;
     }
     if($s['expires']<time()){echo '<p>Offer expired.</p><a class="btn" href="?page=flights">Search again</a>';return;}
-    echo '<h2>Passenger and contact details</h2><p>Use the exact names shown on the passport. Details are submitted securely to the booking supplier; do not send passport data by email.</p>';
-    echo '<form method="post" action="?page=flight_checkout">'.token().'<input type="hidden" name="action" value="nuitee_prebook"><div class="onb-travel-fields">';
+    echo '<section class="onb-checkout-card onb-traveller-intro">';onbCheckoutSectionTitle('02','Traveller details','Enter names exactly as they appear on travel documents.');echo '</section>';
+    echo '<form class="onb-traveller-form" method="post" action="?page=flight_checkout">'.token().'<input type="hidden" name="action" value="nuitee_prebook"><h3>Contact information</h3><div class="onb-travel-fields">';
     foreach(['contact_first'=>'Contact first name','contact_last'=>'Contact last name','phone_code'=>'Phone country code (digits)','phone_number'=>'Phone number (digits)'] as $k=>$label)field($k,$label);
     field('contact_email','Contact email',$s['sandbox']?'':(string)$u['email'],'email');
     echo '</div>';
@@ -194,6 +187,14 @@ function onbFlightCheckoutView(bool $admin): void {
         field($p.'nationality','Nationality (2-letter code)');field($p.'passport','Passport number');field($p.'issuer','Issuing country (2-letter code)');field($p.'expiry','Passport expiry','','date');echo '</div>';
     }
     if($s['sandbox'])echo '<label><input type="checkbox" name="test_data" value="1" required> I am using fictional test passenger information.</label>';
-    echo '<label><input type="checkbox" name="accept_fare" value="1" required> I reviewed the fare, baggage and cancellation terms and agree to proceed to price confirmation.</label><button>Continue to payment</button></form>';
-    }finally{echo '</div><aside class="onb-checkout-aside">'.$summary.'</aside></div>';}
+    echo '<label><input type="checkbox" name="accept_fare" value="1" required> I reviewed the fare, baggage and cancellation terms and agree to proceed to price confirmation.</label><div class="onb-continue"><span>Next: confirm the final fare</span><button>Continue to payment →</button></div></form>';
+    }finally{
+        echo '</div><aside class="onb-checkout-aside onb-checkout-summary"><span class="onb-kicker">BOOKING SUMMARY</span><h2>Your journey</h2><p>'.h($s['summary']).'</p>';
+        onbCheckoutPrice($s,'flight');
+        $terms=$s['verified']['terms']??[];$bags=onbFlightBagLines($s['verified']['baggage']??[]);
+        echo '<div class="onb-summary-rules"><h3>Fare &amp; baggage</h3>';
+        foreach(['refundable'=>'Refundable','changeable'=>'Changes allowed'] as $key=>$label){$value=$terms[$key]??null;echo '<p><span>'.h($label).'</span><strong>'.($value===true?'Yes':($value===false?'No':'Not stated')).'</strong></p>';}
+        foreach($bags as $bag)echo '<p>'.h($bag).'</p>';if(!$bags)echo '<p>Baggage allowance not supplied.</p>';
+        echo '</div><p class="onb-secure-note">Your booking is confirmed only after supplier confirmation.</p></aside></div>';
+    }
 }

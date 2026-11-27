@@ -155,3 +155,34 @@ function onbCheckoutProgress(array $s): void {
     foreach(['Review','Traveller details','Verify price','Payment','Confirmation'] as $i=>$label)echo '<li '.($i+1===$step?'aria-current="step"':'').' class="'.($i+1<$step?'done':'').'"><span>'.($i+1<$step?'✓':$i+1).'</span>'.h($label).'</li>';
     echo '</ol>';
 }
+
+/* Compact checkout components, used only on the two checkout routes. */
+function onbCheckoutHeader(string $kind,array $s,bool $allowed): void {
+    $hotel=$kind==='hotel';$confirmed=($s['state']??'')==='CONFIRMED';
+    $title=$confirmed?'Your reservation':(!empty($s['checkout_id'])?'Complete your booking':($allowed?'Make it yours.':'Review your '.($hotel?'stay.':'flight.')));
+    echo '<div class="onb-checkout-head"><a class="onb-checkout-back" href="?page='.($hotel?'hotels':'flights').'">← Back to '.($hotel?'stays':'flights').'</a><div class="onb-checkout-heading"><div><span class="onb-kicker">YOUR NEXT JOURNEY / '.($hotel?'HOTELS':'FLIGHTS').'</span><h1>'.h($title).'</h1><p>'.($confirmed?'Your reservation details are below.':'Review the details before completing your reservation.').'</p></div><span class="onb-checkout-trust">Private checkout</span></div>';
+    $step=$confirmed?3:(!empty($s['checkout_id'])?2:1);
+    echo '<ol class="onb-checkout-steps" aria-label="Booking progress">';
+    foreach(['Review & traveller details','Secure payment','Confirmation'] as $i=>$label)echo '<li '.($i+1===$step?'aria-current="step"':'').' class="'.($i+1<$step?'done':'').'"><span>'.($i+1<$step?'✓':$i+1).'</span>'.h($label).'</li>';
+    echo '</ol></div>';
+}
+function onbCheckoutPrice(array $s,string $kind): void {
+    $amount=$s['payment_price']??($kind==='flight'?($s['price']??null):($s['listing_price']??null));
+    echo '<div class="onb-checkout-total"><span>'.(isset($s['payment_price'])?'Final payment amount':'Current supplier total').'</span><strong>'.h(onbTravelMoney($amount,'CAD')).'</strong><small>'.(int)($s['adults']??0).' adult(s)'.($kind==='hotel'?' · '.(int)$s['rooms'].' room(s)':'').'</small></div>';
+    if(isset($s['payment_price']))echo '<p class="onb-total-note">Review the final price and supplier terms before authorizing payment.</p>';
+    else echo '<p class="onb-total-note">Subject to final availability and price verification. No reservation is held.</p>';
+}
+function onbCheckoutUnavailable(string $kind,array $s,bool $admin): void {
+    global $c;
+    $hotel=$kind==='hotel';
+    echo '<section class="onb-checkout-card onb-checkout-availability"><span class="onb-kicker">BOOKING OPTIONS</span><h2>Reserve with our travel team</h2><p>Online checkout is not available for this selection yet. You can request assistance with this exact '.($hotel?'stay':'itinerary').'. No payment has been taken and no reservation has been made.</p><div class="onb-checkout-actions">';
+    onbTravelQuote(($hotel?'Hotel':'Flight')." enquiry\n".($s['summary']??'').($hotel?"\n".($s['name']??''):"\n".onbTravelMoney($s['price']??null,'CAD')),'Request booking assistance');
+    echo '<a class="onb-outline-link" href="?page='.($hotel?'hotels':'flights').'">Explore other options</a></div></section>';
+    if($admin){
+        $cfg=$c['nuitee']??[];$flag=$hotel?'hotel_direct_booking_enabled':'direct_booking_enabled';
+        echo '<details class="onb-rate-details onb-admin-checkout"><summary>Administrator: checkout configuration</summary><p>Mode: '.($s['sandbox']?'Sandbox':'Production').'</p><p>'.h($flag).': '.(($cfg[$flag]??false)===true?'On':'Off').'</p><p>checkout_verified: '.(($cfg['checkout_verified']??false)===true?'On':'Off').'</p><p>Update private/config.php on the hosting server. Verify the supplier checkout and recovery flow before enabling production payments. Sandbox checkout is available to administrators using a sandbox API key.</p></details>';
+    }
+}
+function onbCheckoutSectionTitle(string $number,string $title,string $description=''): void {
+    echo '<div class="onb-checkout-section-title"><span>'.h($number).'</span><div><h2>'.h($title).'</h2>';if($description!=='')echo '<p>'.h($description).'</p>';echo '</div></div>';
+}

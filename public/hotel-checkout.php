@@ -116,24 +116,32 @@ function onbHotelCheckoutView(bool $admin): void {
     global $u;
     if(!$u){echo '<h1>Sign in to book</h1><a class="btn" href="?page=login">Sign in</a>';return;}
     try{$s=onbHotelCheckoutState();}catch(RuntimeException $e){echo '<h1>Hotel checkout</h1><p>'.h($e->getMessage()).'</p><a class="btn" href="?page=hotels">Search hotels</a>';return;}
-    echo '<span class="onb-kicker">OUR NEXT BOARDING / HOTEL CHECKOUT</span><h1>'.h($s['name']).'</h1><p>'.h($s['summary']).'</p>';onbCheckoutProgress($s);
+    $allowed=onbHotelPaymentAllowed($admin);onbCheckoutHeader('hotel',$s,$allowed);
     if($s['sandbox'])echo '<p class="notice">Sandbox only — fictional guests and Stripe test cards. No real reservation.</p>';
     if(($s['state']??'')==='CONFIRMED'){
         echo '<section class="onb-confirmed"><h2>'.($s['sandbox']?'Sandbox reservation confirmed':'Hotel reservation confirmed').'</h2><p>Property: '.h($s['confirmed_hotel']??$s['name']).'</p><p>Booking ID: '.h($s['booking_id']).'</p><p>Hotel confirmation code: '.h($s['booking_ref']?:'Awaiting property reference').'</p><p>Keep your booking ID for assistance.</p><a class="btn" href="?page=hotels">Search another hotel</a></section>';return;
     }
-    ob_start();echo '<section><h2>Your stay</h2>';onbPremiumImage($s['hotel']['main_photo']??null,$s['name'],'onb-summary-photo');echo '<p>'.h($s['summary']).'</p>';if(isset($s['payment_price'])||isset($s['listing_price']))echo '<p class="onb-travel-price">'.h(onbTravelMoney($s['payment_price']??$s['listing_price'],'CAD')).'</p>';echo '<h3>Room and cancellation details</h3>';onbHotelRateDetails($s['verified_rates']??$s['rates']);echo '</section>';$summary=ob_get_clean();echo '<div class="onb-checkout-layout"><div class="onb-checkout-primary">';try{
-    if(!onbHotelPaymentAllowed($admin)){echo '<p class="notice">Direct payment is not enabled yet. No reservation has been made.</p>';onbTravelQuote("Hotel enquiry\n".$s['summary']."\n".$s['name']);return;}
+    echo '<div class="onb-checkout-layout onb-refined-checkout"><div class="onb-checkout-primary">';try{
+    echo '<section class="onb-checkout-card onb-itinerary-card">';
+    onbCheckoutSectionTitle('01','Your stay');
+    echo '<div class="onb-stay-review">';onbPremiumImage($s['hotel']['main_photo']??null,$s['name'],'onb-stay-photo');echo '<div><h3>'.h($s['name']).'</h3><p>'.h($s['summary']).'</p></div></div>';
+    echo '<details class="onb-rate-details"><summary>Room details, taxes &amp; cancellation policies</summary>';onbHotelRateDetails($s['verified_rates']??$s['rates']);echo '</details></section>';
+    if(!$allowed){onbCheckoutUnavailable('hotel',$s,$admin);return;}
     if(!empty($s['checkout_id'])){
-        echo '<section><h2>Final payment amount</h2><p class="onb-travel-price">'.h(onbTravelMoney($s['payment_price'],'CAD')).'</p><p>Separate property fees, if applicable, are listed above.</p><p>Checkout reference: '.h($s['checkout_id']).'</p>';
+        echo '<section class="onb-checkout-card">';onbCheckoutSectionTitle('03','Secure payment','Review the final amount and any separate property fees before paying.');echo '<p class="onb-payment-amount">'.h(onbTravelMoney($s['payment_price'],'CAD')).'</p><p class="onb-ref">Checkout reference: '.h($s['checkout_id']).'</p>';
         if(($s['state']??'')!=='PREBOOKED'){echo '<p class="notice">Booking status requires review. Do not pay again. Contact support.</p></section>';return;}
         if(!empty($s['changed']))echo '<p class="notice">The supplier has updated the price or room conditions. Review the final total and updated terms before authorizing.</p>';if(!empty($s['terms_notice']))echo '<p>'.h(strip_tags($s['terms_notice'])).'</p>';
         echo '<div id="onb-hotel-payment" data-mode="'.($s['sandbox']?'sandbox':'live').'" data-secret="'.h($s['secret']).'" data-return="https://ournextboarding.com/index.php?page=hotel_checkout&amp;payment_return=1" data-returned="'.(isset($_GET['payment_return'])?'1':'0').'"><p id="onb-hotel-pay-status" role="status"></p><label><input id="onb-hotel-accept" type="checkbox"> I agree to the final total and updated hotel terms.</label><button id="onb-hotel-start" type="button" disabled>Open secure payment</button><div id="onb-hotel-sdk"></div><form id="onb-hotel-finalize" method="post" action="?page=hotel_checkout" '.(isset($_GET['payment_return'])?'':'hidden').'>'.token().'<input type="hidden" name="action" value="nuitee_hotel_finalize"><p>Returned from the payment provider? Continue to verify and finalize your reservation. Do not pay twice.</p><button type="submit">Confirm reservation</button></form></div><script src="https://payment-wrapper.liteapi.travel/dist/liteAPIPayment.js?v=a1" defer></script><script src="hotel-payment.js?v=1" defer></script></section>';return;
     }
     if($s['expires']<time()){echo '<p>Offer expired.</p><a href="?page=hotels">Search again</a>';return;}
-    echo '<h2>Guest details</h2><form method="post" action="?page=hotel_checkout">'.token().'<input type="hidden" name="action" value="nuitee_hotel_prebook"><div class="onb-travel-fields">';
+    echo '<section class="onb-checkout-card onb-traveller-intro">';onbCheckoutSectionTitle('02','Guest details','Enter the booking holder and the primary guest in each room.');echo '</section><form class="onb-traveller-form" method="post" action="?page=hotel_checkout">'.token().'<input type="hidden" name="action" value="nuitee_hotel_prebook"><h3>Contact information</h3><div class="onb-travel-fields">';
     field('contact_first','Booking holder first name');field('contact_last','Booking holder last name');field('contact_email','Confirmation email',$s['sandbox']?'':(string)$u['email'],'email');echo '</div>';
     for($i=1;$i<=$s['rooms'];$i++){echo '<h3>Room '.$i.' — primary guest</h3><div class="onb-travel-fields">';field('guest_first_'.$i,'First name');field('guest_last_'.$i,'Last name');echo '</div>';}
     if($s['sandbox'])echo '<label><input type="checkbox" name="test_data" value="1" required> I am using fictional guests.</label>';
-    echo '<label><input type="checkbox" name="accept_terms" value="1" required> I have reviewed the room and cancellation policies and want to verify the final price.</label><button>Continue to payment</button></form>';
-    }finally{echo '</div><aside class="onb-checkout-aside">'.$summary.'</aside></div>';}
+    echo '<label><input type="checkbox" name="accept_terms" value="1" required> I have reviewed the room and cancellation policies and want to verify the final price.</label><div class="onb-continue"><span>Next: confirm the final room rate</span><button>Continue to payment →</button></div></form>';
+    }finally{
+        echo '</div><aside class="onb-checkout-aside onb-checkout-summary"><span class="onb-kicker">BOOKING SUMMARY</span><h2>Your reservation</h2><p>'.h($s['name']).'</p><p>'.h($s['summary']).'</p>';
+        onbCheckoutPrice($s,'hotel');
+        echo '<p class="onb-secure-note">Separate mandatory property charges, if any, are listed in the room details. Your stay is confirmed only after supplier confirmation.</p></aside></div>';
+    }
 }
