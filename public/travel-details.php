@@ -100,3 +100,23 @@ function onbHotelDetailView(array $s): void {
     foreach(['checkin'=>'Check-in','checkout'=>'Check-out'] as $key=>$label)if(is_string($hotel['checkinCheckoutTimes'][$key]??null))echo '<p>'.h($label.': '.$hotel['checkinCheckoutTimes'][$key]).'</p>';
     echo '</section>';
 }
+
+function onbFlightSearchDetails(array $journey,array $offer): void {
+    echo '<h3>Flight schedule</h3>';
+    $counts=[];
+    foreach(($journey['segments']??[]) as $seg){
+        if(!is_array($seg))continue;
+        $direction=(string)($seg['direction']??'');$counts[$direction]=($counts[$direction]??0)+1;
+        echo '<p>'.h(onbFlightSegmentLine($seg)).'</p>';
+        foreach(['duration'=>'Duration','operatingCarrierName'=>'Operated by','aircraft'=>'Aircraft'] as $key=>$label)if(is_scalar($seg[$key]??null))echo '<p class="muted">'.h($label.': '.$seg[$key]).'</p>';
+    }
+    foreach($counts as $direction=>$count)echo '<p>'.h(ucfirst(strtolower($direction)).': '.max(0,$count-1).' connection(s)').'</p>';
+    $bags=$offer['baggage']??$journey['baggage']??[];$lines=onbFlightBagLines(is_array($bags)?$bags:[]);
+    echo '<h3>Baggage</h3>';if(!$lines)echo '<p>Allowance not supplied in the search response. Verify before payment.</p>';
+    foreach($lines as $line)echo '<p>'.h($line).'</p>';
+    $terms=$offer['terms']??$journey['terms']??[];
+    echo '<h3>Fare rules</h3>';
+    foreach(['refundable'=>'Refundable','changeable'=>'Changeable'] as $key=>$label){$v=$terms[$key]??null;echo '<p>'.h($label.': '.($v===true?'Yes, subject to conditions':($v===false?'No':'Not stated'))).'</p>';}
+    foreach(($terms['summary']??[]) as $term)if(is_string($term['message']??null))echo '<p>'.h($term['message']).'</p>';
+    echo '<p class="muted">All times are supplier-reported; the complete fare is reverified before checkout.</p>';
+}
