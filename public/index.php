@@ -63,7 +63,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
  if(in_array($action,['nuitee_hotel_select','nuitee_hotel_prebook','nuitee_hotel_finalize'],true)){
  if(($_GET['page']??'')!=='hotel_checkout')throw new RuntimeException('Invalid hotel checkout page.');
  onbHotelCheckoutAction($action,(bool)$admin);
- }elseif(in_array($action,['nuitee_select','nuitee_prebook','nuitee_finalize'],true)){
+ }elseif(in_array($action,['nuitee_select','nuitee_prebook','nuitee_finalize','nuitee_recover_payment'],true)){
  if(($_GET['page']??'')!=='flight_checkout')throw new RuntimeException('Invalid checkout page.');
  onbFlightCheckoutAction($action,(bool)$admin);
  }elseif($action==='nuitee_search'){
