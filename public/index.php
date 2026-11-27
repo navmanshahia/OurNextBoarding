@@ -146,7 +146,7 @@ if($action==='trip'){
 $page=$_GET['page']??'home';
 if(in_array($page,['flight_checkout','hotel_checkout'],true)){
 header('Cache-Control: no-store, private');
-header("Content-Security-Policy: default-src 'self'; script-src 'self' https://js.stripe.com; frame-src https://js.stripe.com https://hooks.stripe.com; connect-src 'self' https://api.stripe.com https://r.stripe.com https://m.stripe.com; img-src 'self' https: data:; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'");
+header("Content-Security-Policy: default-src 'self'; script-src 'self' https://js.stripe.com https://payment-wrapper.liteapi.travel; frame-src https://js.stripe.com https://hooks.stripe.com https://payment-wrapper.liteapi.travel; connect-src 'self' https://api.stripe.com https://r.stripe.com https://m.stripe.com https://payment-wrapper.liteapi.travel; img-src 'self' https: data:; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'");
 }
 if($page==='itinerary-pdf'){
 $id=(int)($_GET['id']??0);$file=__DIR__.'/../private/itineraries/'.$id.'.pdf';
