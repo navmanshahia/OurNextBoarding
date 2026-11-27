@@ -30,12 +30,13 @@ function onbTravelDate(string $value): DateTimeImmutable {
 }
 function onbTravelRequest(string $path, array $body): array {
     $s = onbTravelSettings();
-    if (!in_array($path, ['/hotels/rates','/flights/rates'], true)) throw new RuntimeException('Invalid search.');
-    $curl = curl_init('https://api.liteapi.travel/v3.0'.$path);
+    if (!in_array($path, ['/hotels/rates','/flights/rates','/flights/verify','/flights/prebooks','/flights/bookings','/rates/prebook','/rates/book'], true)) throw new RuntimeException('Invalid search.');
+    $base=in_array($path,['/rates/prebook','/rates/book'],true)?'https://book.liteapi.travel/v3.0':'https://api.liteapi.travel/v3.0';
+    $curl = curl_init($base.$path);
     curl_setopt_array($curl, [
         CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode($body, JSON_THROW_ON_ERROR),
         CURLOPT_HTTPHEADER => ['Content-Type: application/json','Accept: application/json','X-API-Key: '.$s['key']],
-        CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 8, CURLOPT_TIMEOUT => 35,
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 8, CURLOPT_TIMEOUT => in_array($path,['/rates/prebook','/rates/book','/flights/prebooks','/flights/bookings'],true)?120:35,
         CURLOPT_FOLLOWLOCATION => false, CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2
     ]);
     $raw = curl_exec($curl);
@@ -54,7 +55,7 @@ function onbTravelRequest(string $path, array $body): array {
     if ($status === 429) throw new RuntimeException('Search capacity is temporarily reached. Please try again later.'.$detail);
     if ($status === 400 || $status === 422) throw new RuntimeException('The supplier rejected the search parameters. Please check the search or request a quote.'.$detail);
     if ($raw === false || $status !== 200) throw new RuntimeException('The travel supplier is temporarily unavailable. Please try again or request a quote.'.$detail);
-    if ($supplierCode === '2001') return ['data'=>[]];
+    if ($supplierCode === '2001' && in_array($path,['/hotels/rates','/flights/rates'],true)) return ['data'=>[]];
     if (!is_array($data) || isset($data['error'])) throw new RuntimeException('The supplier did not return usable results. Please try again.'.$detail);
     return $data;
 }
@@ -84,7 +85,7 @@ function onbTravelSearch(string $kind, bool $admin): array {
             'checkin'=>$start->format('Y-m-d'),'checkout'=>$end->format('Y-m-d'),
             'occupancies'=>$occ,'currency'=>'CAD','includeHotelData'=>true,'roomMapping'=>true,'maxRatesPerHotel'=>2,'limit'=>30,'timeout'=>15
         ]);
-        return ['response'=>$result,'summary'=>"$city, $country | ".$start->format('Y-m-d').' to '.$end->format('Y-m-d')." | $adults adults, $rooms rooms"];
+        return ['response'=>$result,'summary'=>"$city, $country | ".$start->format('Y-m-d').' to '.$end->format('Y-m-d')." | $adults adults, $rooms rooms",'start'=>$start->format('Y-m-d'),'end'=>$end->format('Y-m-d'),'rooms'=>$rooms,'adults'=>$adults];
     }
     $from = strtoupper(p('origin')); $to = strtoupper(p('destination'));
     if (!preg_match('/^[A-Z]{3}$/D',$from) || !preg_match('/^[A-Z]{3}$/D',$to) || $from===$to) throw new RuntimeException('Enter different three-letter airport codes, such as YVR and NRT.');
@@ -97,7 +98,7 @@ function onbTravelSearch(string $kind, bool $admin): array {
         $summary .= ' | Return '.$end->format('Y-m-d');
     }
     $result = onbTravelRequest('/flights/rates', ['legs'=>$legs,'adults'=>$adults,'currency'=>'CAD','country'=>'CA','sort'=>['sortBy'=>'price','sortOrder'=>'asc']]);
-    return ['response'=>$result,'summary'=>$summary." | $adults adults"];
+    return ['response'=>$result,'summary'=>$summary." | $adults adults",'adults'=>$adults];
 }
 function onbTravelQuote(string $message, string $label='Request booking quote'): void {
     $url='?page=contact&travel_request='.rawurlencode(substr($message,0,1800));
@@ -105,8 +106,9 @@ function onbTravelQuote(string $message, string $label='Request booking quote'):
 }
 function onbTravelResults(string $kind, array $search): void {
     $r=$search['response']; $summary=$search['summary']; $count=0;
-    echo '<h2>Search results</h2><p>'.h($summary).'</p><p class="muted">Prices are supplier estimates at search time, subject to verification, taxes or local charges where applicable. No reservation is held. Request a quote to proceed.</p><div class="onb-travel-results">';
+    echo '<h2>Search results</h2><p>'.h($summary).'</p><p class="muted">Prices are supplier estimates at search time, subject to verification, taxes or local charges where applicable. No reservation is held. Select an offer to review the fare or request a quote.</p><div class="onb-travel-results">';
     if ($kind==='hotels') {
+        $_SESSION['onb_hotel_offers']=[];
         $hotels=[];
         foreach (($r['hotels']??[]) as $hotel) if(is_array($hotel)&&isset($hotel['id'])) $hotels[$hotel['id']]=$hotel;
         foreach (($r['data']??[]) as $entry) {
@@ -127,11 +129,14 @@ function onbTravelResults(string $kind, array $search): void {
                 $photo=(string)($hotel['main_photo']??'');
                 if(filter_var($photo,FILTER_VALIDATE_URL)&&parse_url($photo,PHP_URL_SCHEME)==='https') echo '<img loading="lazy" alt="" src="'.h($photo).'">';
                 echo '<div><h3>'.h($name).'</h3><p>'.h($hotel['address']??'').'</p><p>'.h($roomName.' · '.$board).'</p><p class="onb-travel-price">'.h($money).'</p><p class="muted">Cancellation terms and total must be confirmed.</p>';
+                echo '<details class="onb-rate-details"><summary>Room details and policies</summary>';onbHotelRateDetails($rates);echo '</details>';
+                onbHotelOfferButton($room,$hotel,$entry,$search);
                 onbTravelQuote("Hotel enquiry\n$summary\n$name\n$roomName\n$money (unverified estimate)");
                 echo '</div></article>'; if(++$count>=40) break 2;
             }
         }
     } else {
+        $_SESSION['onb_flight_offers']=[];
         $journeys=[];
         foreach (($r['data']??[]) as $batch) foreach (($batch['journeys']??[]) as $journey) {
             $offer=$journey['offers'][0]??$journey['cheapestOffer']??[];
@@ -146,13 +151,15 @@ function onbTravelResults(string $kind, array $search): void {
                 $segments[]=trim(($seg['direction']??'').' '.$seg['originCode'].' → '.$seg['destinationCode'].' · '.$carrier.' · '.($seg['departureTime']??'').' → '.($seg['arrivalTime']??''));
             }
             if (!$segments) continue;
-            $journeys[]=['segments'=>$segments,'money'=>$money,'sort'=>is_numeric($price['total']??null)?(float)$price['total']:INF];
+            $journeys[]=['segments'=>$segments,'money'=>$money,'offer'=>$offer,'journey'=>$journey,'sort'=>is_numeric($price['total']??null)?(float)$price['total']:INF];
         }
         usort($journeys,fn($a,$b)=>$a['sort']<=>$b['sort']);
         foreach(array_slice($journeys,0,40) as $j){
             echo '<article class="onb-travel-result"><div><h3>Flight itinerary</h3><ul>';
             foreach($j['segments'] as $segment)echo '<li>'.h($segment).'</li>';
             echo '</ul><p class="onb-travel-price">'.h($j['money']).'</p><p class="muted">Fare conditions, baggage and final total require confirmation.</p>';
+            echo '<details class="onb-rate-details"><summary>Flight details</summary>';onbFlightSearchDetails($j['journey'],$j['offer']);echo '</details>';
+            onbFlightOfferButton($j['offer'],$summary,(int)($search['adults']??0));
             onbTravelQuote("Flight enquiry\n$summary\n".implode("\n",$j['segments'])."\n".$j['money'].' (unverified estimate)');
             echo '</div></article>'; $count++;
         }
