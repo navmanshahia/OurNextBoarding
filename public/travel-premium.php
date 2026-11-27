@@ -8,7 +8,18 @@ function onbTravelLookup(bool $admin): void {
     if($_SERVER['REQUEST_METHOD']!=='POST'||!hash_equals($_SESSION['csrf']??'',p('csrf'))||!in_array($kind,['flights','hotels'],true)||!onbTravelCanSearch($kind,$admin)||strlen($query)<2||strlen($query)>100){http_response_code(400);echo '[]';exit;}
     $bucket=$_SESSION['onb_lookup_limit']??[0,0];if($bucket[0]<time()-60)$bucket=[time(),0];if($bucket[1]>=25){http_response_code(429);echo '[]';exit;}$bucket[1]++;$_SESSION['onb_lookup_limit']=$bucket;
     $cacheKey=hash('sha256',$kind.'|'.strtolower($query));$cached=$_SESSION['onb_lookup_cache'][$cacheKey]??null;if(is_array($cached)&&$cached['expires']>time()){echo json_encode($cached['items']);exit;}
-    $path=$kind==='flights'?'/data/flights/airports?'.http_build_query(['q'=>$query]):'/data/places?'.http_build_query(['textQuery'=>$query]);
+    // Limit paid autocomplete across sessions as well as within each session.
+    global $c;
+    $daily=(int)($c['nuitee']['lookup_daily_limit']??300);
+    $hourly=(int)($c['nuitee']['lookup_ip_hourly_limit']??30);
+    $daily=max(1,min(10000,$daily));$hourly=max(1,min(300,$hourly));
+    try{
+        q("CREATE TABLE IF NOT EXISTS onb_travel_lookup_limits(bucket CHAR(64) PRIMARY KEY,hits INT NOT NULL,expires_at DATETIME NOT NULL) ENGINE=InnoDB");
+        q("DELETE FROM onb_travel_lookup_limits WHERE expires_at<NOW()");
+        $keys=[[hash('sha256','daily|'.gmdate('Y-m-d')),$daily],[hash('sha256','ip|'.($_SERVER['REMOTE_ADDR']??'unknown').'|'.gmdate('Y-m-d-H')),$hourly]];
+        foreach($keys as [$key,$limit]){q("INSERT INTO onb_travel_lookup_limits(bucket,hits,expires_at) VALUES(?,1,NOW()+INTERVAL 2 DAY) ON DUPLICATE KEY UPDATE hits=hits+1",[$key]);$n=(int)q("SELECT hits FROM onb_travel_lookup_limits WHERE bucket=?",[$key])->fetchColumn();if($n>$limit){http_response_code(429);echo '[]';exit;}}
+    }catch(Throwable $e){http_response_code(503);echo '[]';exit;}
+    $path=$kind==='flights'?'/data/flights/airports?'.http_build_query(['q'=>$query]):'/data/places?'.http_build_query(['textQuery'=>$query,'type'=>'locality,airport,hotel,lodging']);
     $ch=curl_init('https://api.liteapi.travel/v3.0'.$path);curl_setopt_array($ch,[CURLOPT_HTTPHEADER=>['Accept: application/json','X-API-Key: '.onbTravelSettings()['key']],CURLOPT_RETURNTRANSFER=>true,CURLOPT_CONNECTTIMEOUT=>4,CURLOPT_TIMEOUT=>9,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2]);$raw=curl_exec($ch);$status=curl_getinfo($ch,CURLINFO_HTTP_CODE);curl_close($ch);
     if($status!==200||!is_string($raw)){http_response_code(502);echo '[]';exit;}
     $data=json_decode($raw,true);$rows=$data['data']??[];$out=[];if($kind==='flights'){$flat=[];foreach($rows as $batch)if(is_array($batch))foreach(($batch['airports']??[]) as $airport)$flat[]=$airport;$rows=$flat;}
