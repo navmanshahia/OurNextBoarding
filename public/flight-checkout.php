@@ -111,7 +111,7 @@ function onbFlightCheckoutAction(string $action, bool $admin): void {
         if(!is_numeric($amount)||!is_finite((float)$amount)||(float)$amount<=0||$currency!=='CAD')throw new RuntimeException('The supplier did not return a valid CAD payment amount. No payment was taken.');
         $checkout=bin2hex(random_bytes(24));
         q('INSERT INTO onb_flight_checkouts(checkout_id,user_id,sandbox,prebook_id,transaction_id,amount,currency,state) VALUES(?,?,?,?,?,?,?,?)',[$checkout,(int)$u['id'],(int)$s['sandbox'],$prebook,$transaction,$amount,$currency,'PREBOOKED']);
-        $s['checkout_id']=$checkout;$s['payment_price']=round((float)$amount,2);$s['state']='PREBOOKED';
+        $s['checkout_id']=$checkout;$s['payment_price']=round((float)$amount,2);$s['contact_email']=$email;$s['state']='PREBOOKED';
         $s['secret']=is_string($secret)&&str_starts_with($secret,'pi_')&&str_contains($secret,'_secret_')?$secret:'';
         $s['publishable']=$pk;
         $_SESSION['onb_flight_checkout']=$s;
@@ -124,7 +124,7 @@ function onbFlightCheckoutAction(string $action, bool $admin): void {
         if(!$record)throw new RuntimeException('Checkout record unavailable. Contact support.');
         if($record['state']==='CONFIRMED'){ $s['state']='CONFIRMED';$_SESSION['onb_flight_checkout']=$s;go('page=flight_checkout'); }
         // Supplier validates its own payment transaction. Never accept client-supplied IDs.
-        q("UPDATE onb_flight_checkouts SET state='FINALIZING' WHERE checkout_id=?",[$s['checkout_id']]);
+        if(!q("UPDATE onb_flight_checkouts SET state='FINALIZING' WHERE checkout_id=? AND state='PREBOOKED'",[$s['checkout_id']])->rowCount())throw new RuntimeException('Booking requires review. Do not make another payment. Contact support with the checkout reference.');
         try{
             $res=onbTravelRequest('/flights/bookings',['prebookId'=>$record['prebook_id'],'payment'=>['method'=>'TRANSACTION_ID','transactionId'=>$record['transaction_id']]]);
             $d=$res['data'][0]??$res['data']??[];
@@ -137,9 +137,10 @@ function onbFlightCheckoutAction(string $action, bool $admin): void {
             foreach(($d['airlineLocators']??[]) as $locator)if(is_string($locator['airlinePnr']??null)&&$locator['airlinePnr']!=='')$s['airline_locators'][]=substr((string)($locator['airlineCode']??'').' '.$locator['airlinePnr'],0,100);
             if($status==='CONFIRMED')unset($s['secret'],$s['publishable']);
             $_SESSION['onb_flight_checkout']=$s;
+            if($status==='CONFIRMED')onbTravelConfirmation('flight',$s,$d);
             go('page=flight_checkout');
         }catch(Throwable $e){
-            q("UPDATE onb_flight_checkouts SET state='REVIEW_REQUIRED' WHERE checkout_id=?",[$s['checkout_id']]);
+            q("UPDATE onb_flight_checkouts SET state='REVIEW_REQUIRED' WHERE checkout_id=? AND state='FINALIZING'",[$s['checkout_id']]);
             $s['state']='REVIEW_REQUIRED';$_SESSION['onb_flight_checkout']=$s;
             throw new RuntimeException('Booking confirmation is not yet verified. Do not pay again. Retry confirmation or contact support with your checkout reference.');
         }
@@ -171,7 +172,7 @@ function onbFlightCheckoutView(bool $admin): void {
         $state=$s['state']??'PREBOOKED';
         if($state==='CONFIRMED'){echo '<h3>'.($s['sandbox']?'Sandbox booking confirmed':'Flight booking confirmed').'</h3><p>Booking reference: '.h($s['booking_ref']??'').'</p><p>Booking ID: '.h($s['booking_id']??'').'</p>';foreach(($s['airline_locators']??[]) as $locator)echo '<p>Airline confirmation code: '.h($locator).'</p>';echo '<a class="btn" href="?page=flights">Search another flight</a></section>';return;}
         if($state!=='PREBOOKED')echo '<p class="notice">Status: '.h($state).'. Do not make another payment. Contact support if confirmation remains pending.</p>';
-        if(!empty($s['secret'])){
+        if($state==='PREBOOKED'&&!empty($s['secret'])){
             echo '<div id="onb-flight-payment" data-key="'.h($s['publishable']).'" data-secret="'.h($s['secret']).'" data-recover="'.($state==='PREBOOKED'?'0':'1').'">';
             echo '<form id="onb-flight-card-form"><label>Card details</label><div id="onb-flight-card"></div><p id="onb-flight-pay-message" role="status"></p><label><input type="checkbox" id="onb-flight-pay-accept"> I agree to the final total above and the stated fare terms.</label><button type="submit" id="onb-flight-pay-button" disabled>'.($s['sandbox']?'Test payment':'Authorize payment').'</button></form>';
             echo '<form id="onb-flight-finalize" method="post" action="?page=flight_checkout">'.token().'<input type="hidden" name="action" value="nuitee_finalize"></form>';
